@@ -1,0 +1,2 @@
+# discordtrivia
+Discord trivia bot.
