@@ -1,5 +1,5 @@
 # discordtrivia
-Trivia bot for Discord chat, v0.11
+Trivia bot for Discord chat, v0.12
 
 Instructions:
 --------------
