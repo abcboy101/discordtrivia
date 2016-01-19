@@ -321,7 +321,7 @@ function reconnect() {
 		fs.appendFileSync(outputFilename, "\n<li>var names = ['" + names.join("','") + "'];</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var scores = [" + scores.join(",") + "];</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var streaks = [" + streaks.join(",") + "];</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var times = [" + times.join(",") + "];</li></ul>");
+		fs.appendFileSync(outputFilename, "\n<li>var times = [" + times.join(",") + "];</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var bestTimes = [" + bestTimes.join(",") + "];</li></ul>");
 		fs.appendFileSync(outputFilename, "\n</body>\n</html>");
 		console.log("Connection lost. Existing score data has been dumped.");
@@ -544,6 +544,30 @@ process.stdin.resume();
 
 function exitHandler() {
 	mybot.sendMessage(triviaChannel, "Attention, @everyone. The trivia bot has been terminated.", {tts: true}, function(error, message){
+		if (trivia) {
+			var outputFilename = "results" + Date.now() + ".html";
+			fs.writeFileSync(outputFilename, "<html><head><title>Discord Trivia Bot Results</title></head>\n<body>\n<h1>Winners of round</h1>\n<p style=\"color: red\">(aborted at " + (new Date()).toUTCString() + ")</p>\n<table border=\"1\">\n<tr><th>Rank</th><th>Name</th><th>User ID</th><th>Score</th><th>Best Streak</th><th>Best Time</th><th>Avg. Time</th></tr>");
+			for (var i = 0; i < players.length; i++) {
+				fs.appendFileSync(outputFilename, "\n<tr><td>" + getOrdinal(i + 1) + "</td><td>" + names[i] + "</td><td>&lt;@" + players[i] + "&gt;</td><td>" + scores[i] + "</td><td>" + streaks[i] + "</td><td>" + (bestTimes[i] / 1000).toFixed(3) + "</td><td>" + ((times[i] / scores[i]) / 1000).toFixed(3) + "</td></tr>");
+			}
+			fs.appendFileSync(outputFilename, "\n</table>\n<p>Discord Trivia Bot created by <a href=\"http://bulbapedia.bulbagarden.net/wiki/User:Abcboy\">abcboy</a></p>\n<h2>Error info:</h2><ul>");
+			fs.appendFileSync(outputFilename, "\n<li>var questionNum = " + questionNum + ";</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var maxQuestionNum = " + maxQuestionNum + ";</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var lastRoundWinner = '" + lastRoundWinner + "';</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var roundWinnerScore = " + roundWinnerScore + ";</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var roundWinnerStreak = " + roundWinnerStreak + ";</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var lastBestTimePlayer = '" + lastBestTimePlayer + "';</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var lastBestTime = " + lastBestTime + ";</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var lastBestStreakPlayer = '" + lastBestStreakPlayer + "';</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var lastBestStreak = " + lastBestStreak + ";</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var players = ['" + players.join("','") + "'];</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var names = ['" + names.join("','") + "'];</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var scores = [" + scores.join(",") + "];</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var streaks = [" + streaks.join(",") + "];</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var times = [" + times.join(",") + "];</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var bestTimes = [" + bestTimes.join(",") + "];</li></ul>");
+			fs.appendFileSync(outputFilename, "\n</body>\n</html>");
+		}
 		console.log("The trivia bot has been terminated.");
 		process.exit();
 	});
