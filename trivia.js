@@ -1,4 +1,4 @@
-// Trivia bot for Discord chat, v0.11
+// Trivia bot for Discord chat, v0.12
 // SET THESE THREE YOURSELF
 var filepath = "./trivia.txt";
 var botUsername = "DISCORD USERNAME";
@@ -336,6 +336,13 @@ function reconnect() {
 	attempts++;
 }
 
+function sendPlace(message, place)  {
+	if ((place < 10) && (place < players.length)) {
+		mybot.sendMessage(message, "**" + getOrdinal(place + 1) + " Place**: <@" + players[place] + "> **Points**: " + scores[place] + " **Best streak**: " + streaks[place] + " **Best time**: " + (bestTimes[place] / 1000).toFixed(3) + " sec **Avg. time**: " + (times[place] / scores[place] / 1000).toFixed(3) + " sec");
+		setTimeout(sendPlace, 175, message, place + 1);
+	}
+}
+		
 mybot.on("error", function(error){
 	throw error;
 });
@@ -364,16 +371,7 @@ mybot.on("message", function(message){
 	// if anyone says "!top" in the chat or DM it, they get a DM with the top ten
 	else if (message.content === "!top") {
 		mybot.deleteMessage(message);
-
-		var i = 0;
-		function sendNumber(message, place)  {
-			if ((i < 10) && (i < players.length)) {
-				mybot.sendMessage(message, "**" + getOrdinal(i + 1) + " Place**: <@" + players[i] + "> **Points**: " + scores[i] + " **Best streak**: " + streaks[i] + " **Best time**: " + (bestTimes[i] / 1000).toFixed(3) + " sec **Avg. time**: " + (times[i] / scores[i] / 1000).toFixed(3) + " sec");
-				i++;
-				setTimeout(sendNumber, 175, message, i);
-			}
-		}
-		sendNumber(message, i);
+		sendPlace(message, 0);
 	}
 
 	// only executes if in chat channel trivia or test
