@@ -45,10 +45,8 @@ var Discord = require("discord.js");
 var fs = require('fs');
 var mybot = new Discord.Client();
 var trivia = false;
-var line = "";
 var startQuestionNum = questionNum;
 var totalQuestions = 0;
-var questionText = "";
 var questionTimestamp = 0;
 var answerArray = [];
 var answered = true;
@@ -176,9 +174,9 @@ function askQuestion(message) {
 			}
 		}
 
-		line = getLine(questionNum);
+		var line = getLine(questionNum);
 		questionNum++;
-		questionText = line.substring(0,line.indexOf("*")).replace(/_/g,"\\_");
+		var questionText = line.substring(0,line.indexOf("*")).replace(/_/g,"\\_");
 		answerArray = line.substring(line.indexOf("*")+1).split("*");
 
 		mybot.sendMessage(message, (questionNum - startQuestionNum).toString() + ". **" + questionText + "**", {tts: false}, function(error,questionMessage){
