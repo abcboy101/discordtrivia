@@ -1,4 +1,4 @@
-// Trivia bot for Discord chat, v0.13
+// Trivia bot for Discord chat, v0.14-b
 // SET THESE THREE YOURSELF
 var filepath = "./trivia.txt";
 var botUsername = "DISCORD USERNAME";
@@ -62,6 +62,7 @@ var skipTimeout;
 var triviaChannel;
 var allQuestionNum;
 var attempts = 0;
+var special = ['ß', 'à', 'á', 'â', 'ã', 'ä', 'å', 'æ', 'ç', 'ð', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï', 'ñ', 'ò', 'ó', 'ô', 'õ', 'ö', 'ù', 'ú', 'û', 'ü', 'ý', 'ÿ'];
 
 function getLine(line_no) {
 	var data = fs.readFileSync('shuffled.txt', 'utf8');
@@ -102,21 +103,15 @@ function endTrivia(message, finished) {
 	} else {
 		mybot.sendMessage(message, "Attention, @everyone. The trivia round is ending.", {tts: true});
 	}
-	// 1st Place info
-	mybot.sendMessage(message, "**1st Place**: <@" + players[0] + "> **Points**: " + scores[0] + " **Best streak**: " + streaks[0] + " **Avg. time**: " + ((times[0] / scores[0]) / 1000).toFixed(3) + " sec **Best time**: " + (bestTimes[0] / 1000).toFixed(3) + " sec");
-
 	var bestStreak = streaks.indexOf(Math.max.apply(Math, streaks)); // get index of player with best streak
-	mybot.sendMessage(message, "**Best streak**: <@" + players[bestStreak] + "> with " + streaks[bestStreak]);
-
 	var bestBestTime = bestTimes.indexOf(Math.min.apply(Math, bestTimes)); // get index of player with best best time
-	mybot.sendMessage(message, "**Best time**: <@" + players[bestBestTime] + "> with " + (bestTimes[bestBestTime] / 1000).toFixed(3) + " sec");
-
 	var avgTimes = [];
 	for (var i = 0; i < times.length; i++) {
 		avgTimes.push(times[i] / scores[i]);
 	}
 	var bestAvgTime = avgTimes.indexOf(Math.min.apply(Math, avgTimes)); // get index of player with best average time
-	mybot.sendMessage(message, "**Best avg. time**: <@" + players[bestAvgTime] + "> with " + (avgTimes[bestAvgTime] / 1000).toFixed(3) + " sec");
+	
+	mybot.sendMessage(message, "**1st Place**: <@" + players[0] + "> **Points**: " + scores[0] + " **Best streak**: " + streaks[0] + " **Avg. time**: " + (avgTimes[0] / 1000).toFixed(3) + " sec **Best time**: " + (bestTimes[0] / 1000).toFixed(3) + " sec\n\n**Best streak**: <@" + players[bestStreak] + "> with " + streaks[bestStreak] + "\n**Best time**: <@" + players[bestBestTime] + "> with " + (bestTimes[bestBestTime] / 1000).toFixed(3) + " sec\n**Best avg. time**: <@" + players[bestAvgTime] + "> with " + (avgTimes[bestAvgTime] / 1000).toFixed(3) + " sec");
 
 	trivia = false;
 	console.log("Stopped the trivia");
@@ -126,7 +121,7 @@ function endTrivia(message, finished) {
 	var outputFilename = "results" + Date.now() + ".html";
 	fs.writeFileSync(outputFilename, "<html><head><title>Discord Trivia Bot Results</title></head>\n<body>\n<h1>Winners of round</h1>\n<p>(ended at " + (new Date()).toUTCString() + ")</p>\n<table border=\"1\">\n<tr><th>Rank</th><th>Name</th><th>User ID</th><th>Score</th><th>Best Streak</th><th>Best Time</th><th>Avg. Time</th></tr>");
 	for (var i = 0; i < players.length; i++) {
-		fs.appendFileSync(outputFilename, "\n<tr><td>" + getOrdinal(i + 1) + "</td><td>" + names[i] + "</td><td>&lt;@" + players[i] + "&gt;</td><td>" + scores[i] + "</td><td>" + streaks[i] + "</td><td>" + (bestTimes[i] / 1000).toFixed(3) + "</td><td>" + ((times[i] / scores[i]) / 1000).toFixed(3) + "</td></tr>");
+		fs.appendFileSync(outputFilename, "\n<tr><td>" + getOrdinal(i + 1) + "</td><td>" + names[i] + "</td><td>&lt;@" + players[i] + "&gt;</td><td>" + scores[i] + "</td><td>" + streaks[i] + "</td><td>" + (bestTimes[i] / 1000).toFixed(3) + "</td><td>" + ((avgTimes[i]) / 1000).toFixed(3) + "</td></tr>");
 	}
 	fs.appendFileSync(outputFilename, "\n</table>\n<p>Discord Trivia Bot created by <a href=\"http://bulbapedia.bulbagarden.net/wiki/User:Abcboy\">abcboy</a></p>\n</body>\n</html>");
 }
@@ -259,13 +254,8 @@ function hintBlanks() {
 	var s = answerArray[0].split("");
 	for(var i = 0;i<s.length;i++){
 		var code = s[i].charCodeAt(0);
-		if (i === 0) { // first character is never shown
-			blanks += "\\_";
-		}
-		else if (i === s.length - 1) { // last character is always shown
-			blanks += s[i];
-		}
-		else if ((Math.random() < 0.9) && ((code > 47 && code < 58) || (code > 64 && code < 91) || (code > 96 && code < 123) || (code === 233))) { // if part of the 90% and alphanumeric or é
+		// first character is never shown, last character is always shown
+		if (i === 0 || ((i !== s.length - 1) && (Math.random() < 0.9) && ((code > 47 && code < 58) || (code > 64 && code < 91) || (code > 96 && code < 123) || (special.indexOf(s[i]) !== -1)) { // if part of the 90% and alphanumeric or special
 			blanks += "\\_";
 		}
 		else {
@@ -369,7 +359,7 @@ mybot.on("message", function(message){
 		mybot.deleteMessage(message);
 		var place = 0;
 		var topTen = "**Top ten**:";
-		if (players.length == 0) {
+		if (players.length === 0) {
 			topTen = topTen + "\nNo one yet."
 		}
 		while ((place < 10) && (place < players.length)) {
@@ -395,8 +385,11 @@ mybot.on("message", function(message){
 	
 	// only executes if in chat channel trivia or test
 	else if (message.channel.name === "trivia" || message.channel.name === "test") {
+		var privileged = message.channel.permissionsOf(message.author).hasPermission("manageServer");
+		
 		// only if Rapidash Trivia or people who can manage server types, or if anyoneStart is true
-		if (anyoneStart || anyoneStop || (message.author.id === mybot.user.id) || (message.channel.permissionsOf(message.author).hasPermission("manageServer"))) {
+		if (anyoneStart || privileged || (message.author.id === mybot.user.id)) {
+			
 			if (!trivia && message.content === "!start"){ // starts the trivia
 				triviaChannel = message.channel;
 				mybot.deleteMessage(message);
@@ -408,8 +401,8 @@ mybot.on("message", function(message){
 			}
 		}
 
-		// only if Rapidash Trivia or people who can manage server typess, or if anyoneStop is true
-		if (anyoneStop || (message.author.id === mybot.user.id) || (message.channel.permissionsOf(message.author).hasPermission("manageServer"))) {
+		// only if Rapidash Trivia or people who can manage server types, or if anyoneStop is true
+		if (anyoneStop || privileged || (message.author.id === mybot.user.id)) {
 			if (trivia && message.content === "!stop"){ // stops the trivia
 				mybot.deleteMessage(message);
 				endTrivia(message, false);
@@ -451,7 +444,7 @@ mybot.on("message", function(message){
 		}
 		
 		// if answer is correct
-		if (!answered && parseAnswer(message.content, answerArray)) {
+		if (!answered && !privileged && parseAnswer(message.content, answerArray)) {
 			var timeTaken = message.timestamp - questionTimestamp;
 			if (timeTaken < 1500 || timeTaken > skipTime || 12000 * message.content.length / timeTaken > 120) { //if they answer in less than 1500 ms, before the question is sent to the server, or WPM is greater than 120
 				console.log("*@" + message.author.username + " " + message.author.mention() + " has been banned for suspicious activity* (answered in " + timeTaken + " ms, WPM was " + (12000 * message.content.length / timeTaken).toFixed() + ")");
