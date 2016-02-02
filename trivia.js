@@ -1,5 +1,5 @@
-// Trivia bot for Discord chat, v0.14-b
-// SET THESE THREE YOURSELF
+// Trivia bot for Discord chat, v0.14-b2
+// SET THESE YOURSELF
 var filepath = "./trivia.txt";
 var botUsername = "DISCORD USERNAME";
 var botPassword = "DISCORD PASSWORD";
@@ -48,7 +48,7 @@ var bestTimes = [];
 */
 
 var Discord = require("discord.js");
-var fs = require('fs');
+var fs = require("fs");
 var mybot = new Discord.Client();
 var trivia = false;
 var startQuestionNum = questionNum;
@@ -62,14 +62,14 @@ var skipTimeout;
 var triviaChannel;
 var allQuestionNum;
 var attempts = 0;
-var special = ['ß', 'à', 'á', 'â', 'ã', 'ä', 'å', 'æ', 'ç', 'ð', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï', 'ñ', 'ò', 'ó', 'ô', 'õ', 'ö', 'ù', 'ú', 'û', 'ü', 'ý', 'ÿ'];
+var special = ["ß", "ç", "ð", "ñ", "ý", "ÿ", "à", "á", "â", "ã", "ä", "å", "æ", "è", "é", "ê", "ë", "ì", "í", "î", "ï", "ò", "ó", "ô", "õ", "ö", "ù", "ú", "û", "ü", "ẞ", "Ç", "Ð", "Ñ", "Ý", "Ÿ", "À", "Á", "Â", "Ã", "Ä", "Å", "Æ", "È", "É", "Ê", "Ë", "Ì", "Í", "Î", "Ï", "Ò", "Ó", "Ô", "Õ", "Ö", "Ù", "Ú", "Û", "Ü"];
 
 function getLine(line_no) {
-	var data = fs.readFileSync('shuffled.txt', 'utf8');
+	var data = fs.readFileSync("shuffled.txt", "utf8");
 	var lines = data.split("\r\n");
 
 	if(+line_no > lines.length){
-		throw new Error('File end reached without finding line');
+		throw new Error("File end reached without finding line");
 	}
 
 	return lines[+line_no];
@@ -127,7 +127,7 @@ function endTrivia(message, finished) {
 }
 
 function randomizeQuestions() {
-	var data = fs.readFileSync(filepath, 'utf8').replace(/\\r\\n/g, '\n');
+	var data = fs.readFileSync(filepath, "utf8").replace(/\\r\\n/g, "\n");
 	var lines = data.split("\n");
 
 	allQuestionNum = lines.length;
@@ -148,10 +148,10 @@ function randomizeQuestions() {
 
 function parseAnswer(answer, correct) {
 	function clean(unclean) {
-		return unclean.toLowerCase().trim().replace(/ß/g,'ss').replace(/à/g,'a').replace(/á/g,'a').replace(/â/g,'a').replace(/ã/g,'a').replace(/ä/g,'a').replace(/å/g,'a').replace(/æ/g,'ae').replace(/ç/g,'c').replace(/ð/g,'d').replace(/è/g,'e').replace(/é/g,'e').replace(/ê/g,'e').replace(/ë/g,'e').replace(/ì/g,'i').replace(/í/g,'i').replace(/î/g,'i').replace(/ï/g,'i').replace(/ñ/g,'n').replace(/ò/g,'o').replace(/ó/g,'o').replace(/ô/g,'o').replace(/õ/g,'o').replace(/ö/g,'o').replace(/ù/g,'u').replace(/ú/g,'u').replace(/û/g,'u').replace(/ü/g,'u').replace(/ý/g,'y').replace(/ÿ/g,'y').replace(/&/g,'and').replace(/-/g,' ').replace(/ +(?= )/g,'').replace(/[^a-zA-Z0-9 ]/g, '');
+		return unclean.toLowerCase().trim().replace(/ß/g,"ss").replace(/à/g,"a").replace(/á/g,"a").replace(/â/g,"a").replace(/ã/g,"a").replace(/ä/g,"a").replace(/å/g,"a").replace(/æ/g,"ae").replace(/ç/g,"c").replace(/ð/g,"d").replace(/è/g,"e").replace(/é/g,"e").replace(/ê/g,"e").replace(/ë/g,"e").replace(/ì/g,"i").replace(/í/g,"i").replace(/î/g,"i").replace(/ï/g,"i").replace(/ñ/g,"n").replace(/ò/g,"o").replace(/ó/g,"o").replace(/ô/g,"o").replace(/õ/g,"o").replace(/ö/g,"o").replace(/ù/g,"u").replace(/ú/g,"u").replace(/û/g,"u").replace(/ü/g,"u").replace(/ý/g,"y").replace(/ÿ/g,"y").replace(/&/g,"and").replace(/-/g," ").replace(/ +(?= )/g,"").replace(/[^a-zA-Z0-9 ]/g, "");
 	}
 	function cleanTypos(unclean) {
-		return unclean.replace(/kn/g,'n').replace(/y/g,'i').replace(/k/g,'c').replace(/x/g,'c').replace(/q/g,'c').replace(/e/g,'a').replace(/ah/g,'a').replace(/u/g,'o').replace(/ph/g,'f').replace(/m/g,'n').replace(/ll/g,'l').replace(/aa/g,'a').replace(/oo/g,'o').replace(/cc/g,'c').replace(/z/g,'s');
+		return unclean.replace(/kn/g,"n").replace(/y/g,"i").replace(/k/g,"c").replace(/x/g,"c").replace(/q/g,"c").replace(/e/g,"a").replace(/ah/g,"a").replace(/u/g,"o").replace(/ph/g,"f").replace(/m/g,"n").replace(/ll/g,"l").replace(/aa/g,"a").replace(/oo/g,"o").replace(/cc/g,"c").replace(/z/g,"s");
 	}
 	// string is lowercased, trimmed, and multiple spaces removed, é is turned to e, & is turned to and, all non-alphanumeric characters removed
 	var cleanAnswer = clean(answer);
@@ -305,15 +305,15 @@ function reconnect() {
 		fs.appendFileSync(outputFilename, "\n</table>\n<p>Discord Trivia Bot created by <a href=\"http://bulbapedia.bulbagarden.net/wiki/User:Abcboy\">abcboy</a></p>\n<h2>Error info:</h2><ul>");
 		fs.appendFileSync(outputFilename, "\n<li>var questionNum = " + questionNum + ";</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var maxQuestionNum = " + maxQuestionNum + ";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var lastRoundWinner = '" + lastRoundWinner + "';</li>");
+		fs.appendFileSync(outputFilename, "\n<li>var lastRoundWinner = \"" + lastRoundWinner + "\";</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var roundWinnerScore = " + roundWinnerScore + ";</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var roundWinnerStreak = " + roundWinnerStreak + ";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var lastBestTimePlayer = '" + lastBestTimePlayer + "';</li>");
+		fs.appendFileSync(outputFilename, "\n<li>var lastBestTimePlayer = \"" + lastBestTimePlayer + "\";</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var lastBestTime = " + lastBestTime + ";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var lastBestStreakPlayer = '" + lastBestStreakPlayer + "';</li>");
+		fs.appendFileSync(outputFilename, "\n<li>var lastBestStreakPlayer = \"" + lastBestStreakPlayer + "\";</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var lastBestStreak = " + lastBestStreak + ";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var players = ['" + players.join("','") + "'];</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var names = ['" + names.join("','") + "'];</li>");
+		fs.appendFileSync(outputFilename, "\n<li>var players = [\"" + players.join("\",\"") + "\"];</li>");
+		fs.appendFileSync(outputFilename, "\n<li>var names = [\"" + names.join("\",\"") + "\"];</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var scores = [" + scores.join(",") + "];</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var streaks = [" + streaks.join(",") + "];</li>");
 		fs.appendFileSync(outputFilename, "\n<li>var times = [" + times.join(",") + "];</li>");
@@ -592,15 +592,15 @@ function exitHandler() {
 			fs.appendFileSync(outputFilename, "\n</table>\n<p>Discord Trivia Bot created by <a href=\"http://bulbapedia.bulbagarden.net/wiki/User:Abcboy\">abcboy</a></p>\n<h2>Error info:</h2><ul>");
 			fs.appendFileSync(outputFilename, "\n<li>var questionNum = " + questionNum + ";</li>");
 			fs.appendFileSync(outputFilename, "\n<li>var maxQuestionNum = " + maxQuestionNum + ";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var lastRoundWinner = '" + lastRoundWinner + "';</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var lastRoundWinner = \"" + lastRoundWinner + "\";</li>");
 			fs.appendFileSync(outputFilename, "\n<li>var roundWinnerScore = " + roundWinnerScore + ";</li>");
 			fs.appendFileSync(outputFilename, "\n<li>var roundWinnerStreak = " + roundWinnerStreak + ";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var lastBestTimePlayer = '" + lastBestTimePlayer + "';</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var lastBestTimePlayer = \"" + lastBestTimePlayer + "\";</li>");
 			fs.appendFileSync(outputFilename, "\n<li>var lastBestTime = " + lastBestTime + ";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var lastBestStreakPlayer = '" + lastBestStreakPlayer + "';</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var lastBestStreakPlayer = \"" + lastBestStreakPlayer + "\";</li>");
 			fs.appendFileSync(outputFilename, "\n<li>var lastBestStreak = " + lastBestStreak + ";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var players = ['" + players.join("','") + "'];</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var names = ['" + names.join("','") + "'];</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var players = [\"" + players.join("\",\"") + "\"];</li>");
+			fs.appendFileSync(outputFilename, "\n<li>var names = [\"" + names.join("\",\"") + "\"];</li>");
 			fs.appendFileSync(outputFilename, "\n<li>var scores = [" + scores.join(",") + "];</li>");
 			fs.appendFileSync(outputFilename, "\n<li>var streaks = [" + streaks.join(",") + "];</li>");
 			fs.appendFileSync(outputFilename, "\n<li>var times = [" + times.join(",") + "];</li>");
