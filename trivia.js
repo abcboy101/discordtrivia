@@ -1,8 +1,14 @@
-// Trivia bot for Discord chat, v0.12
+// Trivia bot for Discord chat, v0.13
 // SET THESE THREE YOURSELF
 var filepath = "./trivia.txt";
 var botUsername = "DISCORD USERNAME";
 var botPassword = "DISCORD PASSWORD";
+var anyoneStart = false;
+var anyoneStop = false;
+var startTime = 60000;
+var hintTime = 30000;
+var skipTime = 45000;
+var betweenTime = 15000;
 
 // SET THESE ONLY IF RESUMING A GAME
 var questionNum = 1;
@@ -81,11 +87,10 @@ function startTrivia(message) {
 		scores = [];
 		streaks = [];
 		times = [];
-		maxQuestionNum += totalQuestions;
 	}
 	mybot.sendMessage(message, "Attention, @everyone. The trivia round is starting. (" + totalQuestions + " questions out of " + allQuestionNum + ")", {tts: true});
 	trivia = true;
-	questionTimeout = setTimeout(askQuestion, 60000, message); //starts in 60 seconds
+	questionTimeout = setTimeout(askQuestion, startTime, message);
 }
 
 function endTrivia(message, finished) {
@@ -127,8 +132,8 @@ function endTrivia(message, finished) {
 }
 
 function randomizeQuestions() {
-	var data = fs.readFileSync(filepath, 'utf8');
-	var lines = data.split("\r\n");
+	var data = fs.readFileSync(filepath, 'utf8').replace(/\\r\\n/g, '\n');
+	var lines = data.split("\n");
 
 	allQuestionNum = lines.length;
 	for(var i = allQuestionNum - 1; i > 0; i--) {
@@ -137,7 +142,7 @@ function randomizeQuestions() {
 		lines[i] = lines[j];
 		lines[j] = tmp;
 	}
-	lines = lines.join("\r\n");
+	lines = lines.join("\n");
 	fs.writeFileSync("shuffled.txt", lines);
 	console.log("Questions scrambled to shuffled.txt");
 
@@ -190,8 +195,8 @@ function askQuestion(message) {
 				answered = false;
 				questionTimestamp = questionMessage.timestamp;
 				console.log(questionTimestamp);
-				hintTimeout = setTimeout(hint, 30000, message); // defaults to 30000
-				skipTimeout = setTimeout(skipQuestion, 45000, message); // defaults to 45000
+				hintTimeout = setTimeout(hint, hintTime, message);
+				skipTimeout = setTimeout(skipQuestion, skipTime, message);
 			}
 		});
 	}
@@ -277,7 +282,7 @@ function skipQuestion(message) {
 		} else {
 			lastRoundWinner = "null";
 			answered = true;
-			questionTimeout = setTimeout(askQuestion, 15000, message);
+			questionTimeout = setTimeout(askQuestion, betweenTime, message);
 		}
 	});
 }
@@ -333,13 +338,6 @@ function reconnect() {
 	}
 	attempts++;
 }
-
-function sendPlace(message, place)  {
-	if ((place < 10) && (place < players.length)) {
-		mybot.sendMessage(message, "**" + getOrdinal(place + 1) + " Place**: <@" + players[place] + "> **Points**: " + scores[place] + " **Best streak**: " + streaks[place] + " **Best time**: " + (bestTimes[place] / 1000).toFixed(3) + " sec **Avg. time**: " + (times[place] / scores[place] / 1000).toFixed(3) + " sec");
-		setTimeout(sendPlace, 175, message, place + 1);
-	}
-}
 		
 mybot.on("error", function(error){
 	throw error;
@@ -369,18 +367,50 @@ mybot.on("message", function(message){
 	// if anyone says "!top" in the chat or DM it, they get a DM with the top ten
 	else if (message.content === "!top") {
 		mybot.deleteMessage(message);
-		sendPlace(message, 0);
+		var place = 0;
+		var topTen = "**Top ten**:";
+		if (players.length == 0) {
+			topTen = topTen + "\nNo one yet."
+		}
+		while ((place < 10) && (place < players.length)) {
+			topTen = topTen + "\n**" + getOrdinal(place + 1) + " Place**: <@" + players[place] + "> **Points**: " + scores[place] + " **Best streak**: " + streaks[place] + " **Best time**: " + (bestTimes[place] / 1000).toFixed(3) + " sec **Avg. time**: " + (times[place] / scores[place] / 1000).toFixed(3) + " sec";
+			place++;
+		}
+		mybot.sendMessage(message.author, topTen);
 	}
 
+	// if anyone says "!help" in the chat or DM it, they get a DM with valid commands
+	else if (message.content === "!help") {
+		mybot.deleteMessage(message);
+		if (anyoneStop || (message.author.id === mybot.user.id) || (message.channel.permissionsOf(message.author).hasPermission("manageServer"))) {
+			mybot.sendMessage(message.author, "**Commands:**\n- **!start**: starts the round of trivia\n- **!stop**: ends the round of trivia\n- **!hint**: sends the question's hint now\n- **!skip**: skips the current question\n- **!list** *list*: changes trivia list to the specified list\n- **!anyone start**: toggles ability to use !start and !list\n- **!anyone stop**: toggles ability to use !start, !stop, !hint, !skip, and !list\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
+		}
+		else if (anyoneStart) {
+			mybot.sendMessage(message.author, "**Commands:**\n- **!start**: starts the round of trivia\n- **!list** *list*: changes trivia list to the specified list\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
+		}
+		else {
+			mybot.sendMessage(message.author, "**Commands:**\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
+		}
+	}
+	
 	// only executes if in chat channel trivia or test
 	else if (message.channel.name === "trivia" || message.channel.name === "test") {
-		// only if Rapidash Trivia or people who can manage server types
-		if ((message.author.id === mybot.user.id) || (message.channel.permissionsOf(message.author).hasPermission("manageServer"))) {
+		// only if Rapidash Trivia or people who can manage server types, or if anyoneStart is true
+		if (anyoneStart || anyoneStop || (message.author.id === mybot.user.id) || (message.channel.permissionsOf(message.author).hasPermission("manageServer"))) {
 			if (!trivia && message.content === "!start"){ // starts the trivia
 				triviaChannel = message.channel;
 				mybot.deleteMessage(message);
 				startTrivia(message);
-			} else if (trivia && message.content === "!stop"){ // stops the trivia
+			} else if (!trivia && message.content.split(" ")[0] === "!list"){ // changes trivia list
+				mybot.deleteMessage(message);
+				filepath = "./" + message.content.substr(6).trim();
+				console.log("Trivia list changed to " + filepath);
+			}
+		}
+
+		// only if Rapidash Trivia or people who can manage server typess, or if anyoneStop is true
+		if (anyoneStop || (message.author.id === mybot.user.id) || (message.channel.permissionsOf(message.author).hasPermission("manageServer"))) {
+			if (trivia && message.content === "!stop"){ // stops the trivia
 				mybot.deleteMessage(message);
 				endTrivia(message, false);
 			} else if (!answered && message.content === "!hint"){ // gives the hint now
@@ -392,144 +422,160 @@ mybot.on("message", function(message){
 				clearTimeout(hintTimeout);
 				clearTimeout(skipTimeout);
 				skipQuestion(message);
-			} else if (!trivia && message.content.split(" ")[0] === "!list"){ // changes trivia list
+			} else if (message.content === "!anyone start"){ // anyone can start the trivia
 				mybot.deleteMessage(message);
-				filepath = "./" + message.content.substr(6).trim();
-				console.log("Trivia list changed to " + filepath);
+				anyoneStart = !anyoneStart;
+				if (anyoneStart) {
+					anyoneStop = false;
+					mybot.sendMessage(message, "*Anyone can start the trivia*");
+					console.log("Anyone can start the trivia");
+				} else {
+					anyoneStop = false;
+					mybot.sendMessage(message, "*Only server staff can start or stop the trivia*");
+					console.log("Only server staff can start or stop the trivia");
+				}
+			} else if (message.content === "!anyone stop"){ // anyone can stop the trivia
+				mybot.deleteMessage(message);
+				anyoneStop = !anyoneStop;
+				anyoneStart = anyoneStop;
+				if (anyoneStop) {
+					mybot.sendMessage(message, "*Anyone can start or stop the trivia*");
+					console.log("Anyone can start or stop the trivia");
+				} else {
+					mybot.sendMessage(message, "*Only server staff can start or stop the trivia*");
+					console.log("Only server staff can start or stop the trivia");
+				}
 			} else if (!answered && parseAnswer(message.content, answerArray)) {
 				mybot.deleteMessage(message);
 			}
 		}
-		// if not Rapidash Trivia
-		else {
-			if (!answered && parseAnswer(message.content, answerArray)) {
-				var timeTaken = message.timestamp - questionTimestamp;
-				if (timeTaken < 1500 || timeTaken > 45000 || 12000 * message.content.length / timeTaken > 120) { //if they answer in less than 1500 ms, before the question is sent to the server, or WPM is greater than 120
-					console.log("*@" + message.author.username + " " + message.author.mention() + " has been banned for suspicious activity* (answered in " + timeTaken + " ms, WPM was " + (12000 * message.content.length / timeTaken).toFixed() + ")");
-					mybot.banMember(message.author, message.channel.server, 0);
-					mybot.sendMessage(message.channel, "*" + message.author.mention() + " has been banned for suspicious activity*");
-					mybot.sendMessage(message.author, "*You have been banned for suspicious activity*");
-					mybot.deleteMessage(message);
-				} else {
-					clearTimeout(hintTimeout);
-					clearTimeout(skipTimeout);
-					var oldRank;
+		
+		// if answer is correct
+		if (!answered && parseAnswer(message.content, answerArray)) {
+			var timeTaken = message.timestamp - questionTimestamp;
+			if (timeTaken < 1500 || timeTaken > skipTime || 12000 * message.content.length / timeTaken > 120) { //if they answer in less than 1500 ms, before the question is sent to the server, or WPM is greater than 120
+				console.log("*@" + message.author.username + " " + message.author.mention() + " has been banned for suspicious activity* (answered in " + timeTaken + " ms, WPM was " + (12000 * message.content.length / timeTaken).toFixed() + ")");
+				mybot.banMember(message.author, message.channel.server, 0);
+				mybot.sendMessage(message.channel, "*" + message.author.mention() + " has been banned for suspicious activity*");
+				mybot.sendMessage(message.author, "*You have been banned for suspicious activity*");
+				mybot.deleteMessage(message);
+			} else {
+				clearTimeout(hintTimeout);
+				clearTimeout(skipTimeout);
+				var oldRank;
+				if (players.indexOf(message.author.id) === -1) { // if player hasn't won before
+					players.push(message.author.id);
+					names.push(message.author.username);
+					scores.push(1);
+					streaks.push(1);
+					times.push(timeTaken);
+					bestTimes.push(timeTaken);
+					oldRank = players.length + 1; // rank + 1 to force message
+					roundWinnerScore = 1;
+					roundWinnerStreak = 1;
+				} else { // if player has won before
+					var winnerIndex = players.indexOf(message.author.id);
+					oldRank = winnerIndex + 1;
+					scores[winnerIndex]++;
+					roundWinnerScore = scores[winnerIndex];
+					times[winnerIndex] += timeTaken;
 
-					if (players.indexOf(message.author.id) === -1) { // if player hasn't won before
-						players.push(message.author.id);
-						names.push(message.author.username);
-						scores.push(1);
-						streaks.push(1);
-						times.push(timeTaken);
-						bestTimes.push(timeTaken);
-						oldRank = players.length + 1; // rank + 1 to force message
-						roundWinnerScore = 1;
+					if (lastRoundWinner === message.author.id) { // if winner of this and last round are the same
+						roundWinnerStreak++;
+						if (roundWinnerStreak > streaks[winnerIndex]) { // if this is a longer streak than old best streak
+							streaks[winnerIndex] = roundWinnerStreak;
+						}
+						if (roundWinnerStreak > 5) {
+							mybot.sendMessage(message, "*" + message.author.mention() + " stretches their streak to " + roundWinnerStreak + "!*");
+						}
+					} else {
+						if (roundWinnerStreak > 5) {
+							mybot.sendMessage(message, "*<@" + lastBestStreakPlayer + ">'s  streak ended at " + roundWinnerStreak + " by " + message.author.mention() + "*");
+						}
 						roundWinnerStreak = 1;
-					} else { // if player has won before
-						var winnerIndex = players.indexOf(message.author.id);
-						oldRank = winnerIndex + 1;
-						scores[winnerIndex]++;
-						roundWinnerScore = scores[winnerIndex];
-						times[winnerIndex] += timeTaken;
-
-						if (lastRoundWinner === message.author.id) { // if winner of this and last round are the same
-							roundWinnerStreak++;
-							if (roundWinnerStreak > streaks[winnerIndex]) { // if this is a longer streak than old best streak
-								streaks[winnerIndex] = roundWinnerStreak;
-							}
-							if (roundWinnerStreak > 5) {
-								mybot.sendMessage(message, "*" + message.author.mention() + " stretches their streak to " + roundWinnerStreak + "!*");
-							}
-						} else {
-							if (roundWinnerStreak > 5) {
-								mybot.sendMessage(message, "*<@" + lastBestStreakPlayer + ">'s  streak ended at " + roundWinnerStreak + " by " + message.author.mention() + "*");
-							}
-							roundWinnerStreak = 1;
-						}
-
-						if (timeTaken < bestTimes[winnerIndex]) { // if this is a better time than old best time
-							bestTimes[winnerIndex] = timeTaken;
-						}
-
-						players = sortByArray(players,scores);
-						names = sortByArray(names,scores);
-						streaks = sortByArray(streaks,scores);
-						times = sortByArray(times,scores);
-						bestTimes = sortByArray(bestTimes,scores);
-						scores.sort(function(a, b) {
-							return b - a;
-						});
 					}
 
-					var rank = players.indexOf(message.author.id) + 1;
-
-					// say correct answer and who entered it
-					mybot.sendMessage(message, "**Winner**: " + message.author.mention() + " **Answer**: " + answerArray[0] + " **Points**: " + roundWinnerScore + " **Place**: " + getOrdinal(rank) + " **Streak**: " + roundWinnerStreak + " **Time**: " + (timeTaken / 1000).toFixed(3) + " sec");
-					console.log("Winner: " + message.author.username + " " + message.author.mention() + " Answer: " + message.content + " Points: " + roundWinnerScore + " Place: " + getOrdinal(rank) + " Streak: " + roundWinnerStreak + " Time: " + (timeTaken / 1000).toFixed(3) + " sec");
-
-					// sends message if they moved up in rank
-					if (rank < oldRank) {
-						mybot.sendMessage(message, "*" + message.author.mention() + " has moved up in rank* (" + getOrdinal(rank) + ")");
+					if (timeTaken < bestTimes[winnerIndex]) { // if this is a better time than old best time
+						bestTimes[winnerIndex] = timeTaken;
 					}
-
-					// keep track of time record for current round
-					if (lastBestTimePlayer === "null") { // if there is no best time yet
-						lastBestTimePlayer = message.author.id;
-						lastBestTime = timeTaken;
-					} else if (timeTaken < lastBestTime) { // if the player beat the last best time
-						mybot.sendMessage(message, "*" + message.author.mention() + " broke the current round time record with " + (timeTaken / 1000).toFixed(3) + " sec! Previous record holder was <@" + lastBestTimePlayer + "> with " + (lastBestTime / 1000).toFixed(3) + " sec!*");
-						lastBestTimePlayer = message.author.id;
-						lastBestTime = timeTaken;
-					}
-
-					// keep track of streak record for current round
-					if (lastBestStreakPlayer === "null") { // if there is no best streak yet
-						lastBestStreakPlayer = message.author.id;
-						lastBestStreak = roundWinnerStreak;
-					} else if (roundWinnerStreak > lastBestStreak) { // if the player beat the last best streak
-						if (lastBestStreakPlayer !== message.author.id) {
-							mybot.sendMessage(message, "*" + message.author.mention() + " broke the current round streak record with " + roundWinnerStreak + "! Previous record holder was <@" + lastBestStreakPlayer + "> with " + lastBestStreak + "!*");
-						}
-						lastBestStreakPlayer = message.author.id;
-						lastBestStreak = roundWinnerStreak;
-					}
-
-					// sends message based on streak
-					switch (roundWinnerStreak) {
-						case 3:
-							mybot.sendMessage(message, "*" + mybot.user.mention() + " hands " + message.author.mention() + " a jelly-filled donut for getting the last 3 questions!*");
-							break;
-						case 5:
-							mybot.sendMessage(message, "*" + mybot.user.mention() + " hands " + message.author.mention() + " a diploma for getting the last 5 questions!*");
-							break;
-						case 10:
-							mybot.sendMessage(message, "*" + mybot.user.mention() + " watches " + message.author.mention() + " speed away from their competitors, kicking their asses! 10 questions!*");
-							break;
-						case 15:
-							mybot.sendMessage(message, "*" + mybot.user.mention() + " bows before " + message.author.mention() + " who is a trivia Legendary Pokémon...*");
-							break;
-						case 25:
-							mybot.sendMessage(message, "*" + mybot.user.mention() + " bows before " + message.author.mention() + " who knows more about Pokémon than Arceus...*");
-							break;
-					}
-
-					// sends message based on points
-					switch (roundWinnerScore) {
-						case 50:
-							mybot.sendMessage(message, "*" + mybot.user.mention() + " rewards " + message.author.mention() + " with a Ratatta in the top percentage of all Rattata!*");
-							break;
-						case 100:
-							mybot.sendMessage(message, "*" + mybot.user.mention() + " rewards " + message.author.mention() + " with some shorts that are comfy and easy to wear!*");
-							break;
-						case 150:
-							mybot.sendMessage(message, "*" + mybot.user.mention() + " rewards " + message.author.mention() + " with a Helix Fossil!*");
-							break;
-					}
-
-					lastRoundWinner = message.author.id;
-					answered = true;
-					questionTimeout = setTimeout(askQuestion, 15000, message); // starts in 15 seconds
+					players = sortByArray(players,scores);
+					names = sortByArray(names,scores);
+					streaks = sortByArray(streaks,scores);
+					times = sortByArray(times,scores);
+					bestTimes = sortByArray(bestTimes,scores);
+					scores.sort(function(a, b) {
+					return b - a;
+					});
 				}
+
+				var rank = players.indexOf(message.author.id) + 1;
+
+				// say correct answer and who entered it
+				mybot.sendMessage(message, "**Winner**: " + message.author.mention() + " **Answer**: " + answerArray[0] + " **Points**: " + roundWinnerScore + " **Place**: " + getOrdinal(rank) + " **Streak**: " + roundWinnerStreak + " **Time**: " + (timeTaken / 1000).toFixed(3) + " sec");
+				console.log("Winner: " + message.author.username + " " + message.author.mention() + " Answer: " + message.content + " Points: " + roundWinnerScore + " Place: " + getOrdinal(rank) + " Streak: " + roundWinnerStreak + " Time: " + (timeTaken / 1000).toFixed(3) + " sec");
+
+				// sends message if they moved up in rank
+				if (rank < oldRank) {
+					mybot.sendMessage(message, "*" + message.author.mention() + " has moved up in rank* (" + getOrdinal(rank) + ")");
+				}
+
+				// keep track of time record for current round
+				if (lastBestTimePlayer === "null") { // if there is no best time yet
+					lastBestTimePlayer = message.author.id;
+					lastBestTime = timeTaken;
+				} else if (timeTaken < lastBestTime) { // if the player beat the last best time
+					mybot.sendMessage(message, "*" + message.author.mention() + " broke the current round time record with " + (timeTaken / 1000).toFixed(3) + " sec! Previous record holder was <@" + lastBestTimePlayer + "> with " + (lastBestTime / 1000).toFixed(3) + " sec!*");
+					lastBestTimePlayer = message.author.id;
+					lastBestTime = timeTaken;
+				}
+
+				// keep track of streak record for current round
+				if (lastBestStreakPlayer === "null") { // if there is no best streak yet
+					lastBestStreakPlayer = message.author.id;
+					lastBestStreak = roundWinnerStreak;
+				} else if (roundWinnerStreak > lastBestStreak) { // if the player beat the last best streak
+					if (lastBestStreakPlayer !== message.author.id) {
+						mybot.sendMessage(message, "*" + message.author.mention() + " broke the current round streak record with " + roundWinnerStreak + "! Previous record holder was <@" + lastBestStreakPlayer + "> with " + lastBestStreak + "!*");
+					}
+					lastBestStreakPlayer = message.author.id;
+					lastBestStreak = roundWinnerStreak;
+				}
+
+				// sends message based on streak
+				switch (roundWinnerStreak) {
+					case 3:
+						mybot.sendMessage(message, "*" + mybot.user.mention() + " hands " + message.author.mention() + " a jelly-filled donut for getting the last 3 questions!*");
+						break;
+					case 5:
+						mybot.sendMessage(message, "*" + mybot.user.mention() + " hands " + message.author.mention() + " a diploma for getting the last 5 questions!*");
+						break;
+					case 10:
+						mybot.sendMessage(message, "*" + mybot.user.mention() + " watches " + message.author.mention() + " speed away from their competitors, kicking their asses! 10 questions!*");
+						break;
+					case 15:
+						mybot.sendMessage(message, "*" + mybot.user.mention() + " bows before " + message.author.mention() + " who is a trivia Legendary Pokémon...*");
+						break;
+					case 25:
+						mybot.sendMessage(message, "*" + mybot.user.mention() + " bows before " + message.author.mention() + " who knows more about Pokémon than Arceus...*");
+						break;
+				}
+
+				// sends message based on points
+				switch (roundWinnerScore) {
+					case 50:
+						mybot.sendMessage(message, "*" + mybot.user.mention() + " rewards " + message.author.mention() + " with a Ratatta in the top percentage of all Rattata!*");
+						break;
+					case 100:
+						mybot.sendMessage(message, "*" + mybot.user.mention() + " rewards " + message.author.mention() + " with some shorts that are comfy and easy to wear!*");
+						break;
+					case 150:
+						mybot.sendMessage(message, "*" + mybot.user.mention() + " rewards " + message.author.mention() + " with a Helix Fossil!*");
+						break;
+				}
+
+				lastRoundWinner = message.author.id;
+				answered = true;
+				questionTimeout = setTimeout(askQuestion, betweenTime, message);
 			}
 		}
 	}
