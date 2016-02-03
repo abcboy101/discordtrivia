@@ -1,4 +1,4 @@
-// Trivia bot for Discord chat, v0.14-b2
+// Trivia bot for Discord chat, v0.14
 // SET THESE YOURSELF
 var filepath = "./trivia.txt";
 var botUsername = "DISCORD USERNAME";
@@ -110,8 +110,8 @@ function endTrivia(message, finished) {
 		avgTimes.push(times[i] / scores[i]);
 	}
 	var bestAvgTime = avgTimes.indexOf(Math.min.apply(Math, avgTimes)); // get index of player with best average time
-	
-	mybot.sendMessage(message, "**1st Place**: <@" + players[0] + "> **Points**: " + scores[0] + " **Best streak**: " + streaks[0] + " **Avg. time**: " + (avgTimes[0] / 1000).toFixed(3) + " sec **Best time**: " + (bestTimes[0] / 1000).toFixed(3) + " sec\n\n**Best streak**: <@" + players[bestStreak] + "> with " + streaks[bestStreak] + "\n**Best time**: <@" + players[bestBestTime] + "> with " + (bestTimes[bestBestTime] / 1000).toFixed(3) + " sec\n**Best avg. time**: <@" + players[bestAvgTime] + "> with " + (avgTimes[bestAvgTime] / 1000).toFixed(3) + " sec");
+
+	mybot.sendMessage(message, "**1st Place**: <@" + players[0] + "> **Points**: " + scores[0] + " **Best streak**: " + streaks[0] + " **Avg. time**: " + (avgTimes[0] / 1000).toFixed(3) + " sec **Best time**: " + (bestTimes[0] / 1000).toFixed(3) + " sec\n**2nd Place**: <@" + players[1] + "> **Points**: " + scores[1] + " **Best streak**: " + streaks[1] + " **Avg. time**: " + (avgTimes[1] / 1000).toFixed(3) + " sec **Best time**: " + (bestTimes[1] / 1000).toFixed(3) + " sec\n**3rd Place**: <@" + players[2] + "> **Points**: " + scores[2] + " **Best streak**: " + streaks[2] + " **Avg. time**: " + (avgTimes[2] / 1000).toFixed(3) + " sec **Best time**: " + (bestTimes[2] / 1000).toFixed(3) + " sec\n\n**Best streak**: <@" + players[bestStreak] + "> with " + streaks[bestStreak] + "\n**Best time**: <@" + players[bestBestTime] + "> with " + (bestTimes[bestBestTime] / 1000).toFixed(3) + " sec\n**Best avg. time**: <@" + players[bestAvgTime] + "> with " + (avgTimes[bestAvgTime] / 1000).toFixed(3) + " sec");
 
 	trivia = false;
 	console.log("Stopped the trivia");
@@ -255,7 +255,7 @@ function hintBlanks() {
 	for(var i = 0;i<s.length;i++){
 		var code = s[i].charCodeAt(0);
 		// first character is never shown, last character is always shown
-		if (i === 0 || ((i !== s.length - 1) && (Math.random() < 0.9) && ((code > 47 && code < 58) || (code > 64 && code < 91) || (code > 96 && code < 123) || (special.indexOf(s[i]) !== -1)) { // if part of the 90% and alphanumeric or special
+		if (i === 0 || ((i !== s.length - 1) && (Math.random() < 0.9) && ((code > 47 && code < 58) || (code > 64 && code < 91) || (code > 96 && code < 123) || (special.indexOf(s[i]) !== -1)))) { // if part of the 90% and alphanumeric or special
 			blanks += "\\_";
 		}
 		else {
@@ -328,7 +328,7 @@ function reconnect() {
 	}
 	attempts++;
 }
-		
+
 mybot.on("error", function(error){
 	throw error;
 });
@@ -351,14 +351,14 @@ mybot.on("message", function(message){
 			bestTime = 0;
 			avgTime = "—";
 		}
-		mybot.sendMessage(message.author, "**Points**: " + score + " **Place**: " + place + " **Best streak**: " + streak + " **Best time**: " + (bestTime / 1000).toFixed(3) + " sec **Avg. time**: " + avgTime + " sec");
+		mybot.sendMessage(message.author, "Your info:\n**Points**: " + score + " **Place**: " + place + " **Best streak**: " + streak + " **Best time**: " + (bestTime / 1000).toFixed(3) + " sec **Avg. time**: " + avgTime + " sec");
 	}
 
 	// if anyone says "!top" in the chat or DM it, they get a DM with the top ten
 	else if (message.content === "!top") {
 		mybot.deleteMessage(message);
 		var place = 0;
-		var topTen = "**Top ten**:";
+		var topTen = "Top ten:";
 		if (players.length === 0) {
 			topTen = topTen + "\nNo one yet."
 		}
@@ -373,23 +373,23 @@ mybot.on("message", function(message){
 	else if (message.content === "!help") {
 		mybot.deleteMessage(message);
 		if (anyoneStop || (message.author.id === mybot.user.id) || (message.channel.permissionsOf(message.author).hasPermission("manageServer"))) {
-			mybot.sendMessage(message.author, "**Commands:**\n- **!start**: starts the round of trivia\n- **!stop**: ends the round of trivia\n- **!hint**: sends the question's hint now\n- **!skip**: skips the current question\n- **!list** *list*: changes trivia list to the specified list\n- **!anyone start**: toggles ability to use !start and !list\n- **!anyone stop**: toggles ability to use !start, !stop, !hint, !skip, and !list\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
+			mybot.sendMessage(message.author, "Commands:\n- **!start**: starts the round of trivia\n- **!stop**: ends the round of trivia\n- **!hint**: sends the question's hint now\n- **!skip**: skips the current question\n- **!list** *list*: changes trivia list to the specified list\n- **!anyone start**: toggles ability to use !start and !list\n- **!anyone stop**: toggles ability to use !start, !stop, !hint, !skip, and !list\n- **!anyone answer**: toggles ability for server staff to answer\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
 		}
 		else if (anyoneStart) {
-			mybot.sendMessage(message.author, "**Commands:**\n- **!start**: starts the round of trivia\n- **!list** *list*: changes trivia list to the specified list\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
+			mybot.sendMessage(message.author, "Commands:\n- **!start**: starts the round of trivia\n- **!list** *list*: changes trivia list to the specified list\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
 		}
 		else {
-			mybot.sendMessage(message.author, "**Commands:**\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
+			mybot.sendMessage(message.author, "Commands:\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
 		}
 	}
-	
+
 	// only executes if in chat channel trivia or test
 	else if (message.channel.name === "trivia" || message.channel.name === "test") {
 		var privileged = message.channel.permissionsOf(message.author).hasPermission("manageServer");
-		
+
 		// only if Rapidash Trivia or people who can manage server types, or if anyoneStart is true
 		if (anyoneStart || privileged || (message.author.id === mybot.user.id)) {
-			
+
 			if (!trivia && message.content === "!start"){ // starts the trivia
 				triviaChannel = message.channel;
 				mybot.deleteMessage(message);
@@ -438,13 +438,23 @@ mybot.on("message", function(message){
 					mybot.sendMessage(message, "*Only server staff can start or stop the trivia*");
 					console.log("Only server staff can start or stop the trivia");
 				}
-			} else if (!answered && parseAnswer(message.content, answerArray)) {
+			} else if (message.content === "!anyone answer"){ // anyone can start the trivia
+				mybot.deleteMessage(message);
+				anyoneAnswer = !anyoneAnswer;
+				if (anyoneAnswer) {
+					mybot.sendMessage(message, "*Anyone can answer the trivia*");
+					console.log("Anyone can answer the trivia");
+				} else {
+					mybot.sendMessage(message, "*Server staff cannot answer the trivia*");
+					console.log("Server staff cannot answer the trivia");
+				}
+			} else if (!answered && !anyoneAnswer && privileged && parseAnswer(message.content, answerArray)) {
 				mybot.deleteMessage(message);
 			}
 		}
-		
+
 		// if answer is correct
-		if (!answered && !privileged && parseAnswer(message.content, answerArray)) {
+		if (!answered && (anyoneAnswer || !privileged) && parseAnswer(message.content, answerArray)) {
 			var timeTaken = message.timestamp - questionTimestamp;
 			if (timeTaken < 1500 || timeTaken > skipTime || 12000 * message.content.length / timeTaken > 120) { //if they answer in less than 1500 ms, before the question is sent to the server, or WPM is greater than 120
 				console.log("*@" + message.author.username + " " + message.author.mention() + " has been banned for suspicious activity* (answered in " + timeTaken + " ms, WPM was " + (12000 * message.content.length / timeTaken).toFixed() + ")");
