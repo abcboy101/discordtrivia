@@ -1,5 +1,5 @@
 # discordtrivia
-Trivia bot for Discord chat, v0.13
+Trivia bot for Discord chat, v0.14
 
 Instructions:
 --------------
@@ -9,11 +9,11 @@ Instructions:
 - Using Discord, type !start into the channel.
 - When the round is complete or !stop is sent, the results for the round will be sent to a file named results<timestamp>.html.
 
-By default, the trivia bot will ask 150 questions. Change the value of maxQuestionNum (line 15) to the number of questions you would like to ask. If there are fewer questions in the file than maxQuestionNum, the trivia bot will only ask the number of questions in the file.
+By default, the trivia bot will ask 150 questions. Change the value of maxQuestionNum (line 16) to the number of questions you would like to ask. If there are fewer questions in the file than maxQuestionNum, the trivia bot will only ask the number of questions in the file.
 
 If !start is sent again after the trivia has been stopped, it will scramble the questions again, start a new trivia round, and scores/players/etc. will be reset.
 
-If the bot loses connection, it will dump the score table so far to results<timestamp>.html. As soon as it detects that it is able to connect, it will continue asking questions. If the bot is terminated during a loss of connection, paste the error info over lines 14 to 28 and start the bot. Afterwards, make sure to replace those values with the previous values.
+If the bot loses connection, it will dump the score table so far to results<timestamp>.html. As soon as it detects that it is able to connect, it will continue asking questions. If the bot is terminated during a loss of connection, paste the error info over lines 15 to 29 and start the bot. Afterwards, make sure to replace those values with the previous values.
 
 Valid commands:
 --------------
@@ -25,6 +25,7 @@ Use in the chat as the credentials provided or a user who can manage server
 - !list:          changes trivia list to the specified list
 - !anyone start:  toggles ability of general users to use !start and !list
 - !anyone stop:   toggles ability of general users to use !start, !stop, !hint, !skip, and !list
+- !anyone answer: toggles ability of privileged users to answer questions
 
 Anyone can use these in the chat
 - !info:          sends a DM to the user who typed !info with their score and place
