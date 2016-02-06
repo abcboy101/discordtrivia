@@ -1,9 +1,10 @@
 # discordtrivia
-Trivia bot for Discord chat, v0.14
+Trivia bot for Discord chat, v0.17
 
 Instructions:
 --------------
-- Create file trivia.txt with your questions in the same directory as trivia.js.
+- Create file trivia.txt with your questions in the same directory as trivia.js. The questions should be in the following format, with one question per line:
+  - What is the fifth word in this question?*word
 - Enter the Discord username and password to be used on lines 4 and 5 of trivia.js.
 - On Windows: Drag trivia.js to the node.exe file to run it. On other platforms, go to https://nodejs.org/en/download/ and download the proper binary for your system.
 - Using Discord, type !start into the channel.
@@ -23,8 +24,11 @@ Use in the chat as the credentials provided or a user who can manage server
 - !hint:          sends the question's hint now
 - !skip:          skips the current question
 - !list:          changes trivia list to the specified list
+- !pause:         pauses the round of trivia
+- !continue:      continues the round of trivia, if paused
+- !questions:     changes number of questions to the specified number
 - !anyone start:  toggles ability of general users to use !start and !list
-- !anyone stop:   toggles ability of general users to use !start, !stop, !hint, !skip, and !list
+- !anyone stop:   toggles ability of general users to use !start, !stop, !hint, !skip, !list, !pause, !continue, and !questions
 - !anyone answer: toggles ability of privileged users to answer questions
 
 Anyone can use these in the chat
