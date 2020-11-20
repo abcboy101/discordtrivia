@@ -1,19 +1,59 @@
-// Trivia bot for Discord chat, v0.17
-// SET THESE YOURSELF
-var filepath = "./trivia.txt";
-var botUsername = "DISCORD USERNAME";
-var botPassword = "DISCORD PASSWORD";
-var anyoneStart = false;
-var anyoneStop = false;
-var anyoneAnswer = false;
-var startTime = 60000;
-var hintTime = 30000;
-var skipTime = 45000;
-var betweenTime = 15000;
+﻿// Trivia bot for Discord chat, v0.50.0-alpha
+const Discord = require("discord.js");
+const fs = require("fs");
+const path = require("path");
+const request = require("request");
+const readline = require("readline");
+const crypto = require("crypto");
+const bot = new Discord.Client();
+const rl = readline.createInterface(process.stdin, process.stdout);
+rl.setPrompt("");
 
-// SET THESE ONLY IF RESUMING A GAME
+var versionString = "0.50.0-alpha";
+console.log("The trivia bot has been launched. (v" + versionString + ")");
+
+// load settings from settings.txt
+var settings = {};
+var local = {};
+try {
+	settings = JSON.parse(`{${fs.readFileSync("settings.txt", "utf8").replace(/^\uFEFF/, '')}}`);
+	console.log("settings.txt loaded");
+} catch(err) {
+	console.log("settings.txt error! Loading default settings...");
+	settings = {
+		filepath: "trivia.txt",
+		lang: "en",
+		anyoneStart: false,
+		anyoneStop: false,
+		anyoneAnswer: false,
+		autoDownload: false,
+		tiebreaker: false,
+		tts: false,
+		startTime: 60000,
+		hintTime: 30000,
+		skipTime: 45000,
+		betweenTime: 15000,
+		downloadUrl: "null",
+		maxQuestionNum: 150,
+		allowedChannels: ["trivia"],
+		triviaChannel: "",
+		musicChannel: "",
+		schedule: [],
+		token: "",
+		debug: false
+	}
+}
+
+try {
+	local = JSON.parse("{" + fs.readFileSync("local_" + settings.lang + ".txt", "utf8").replace(/^\uFEFF/, '') + "}");
+	console.log(localize("c_langLoaded"));
+} catch(err) {
+	console.log(`local_${settings.lang}.txt error! Check for errors in the file.`);
+	process.exit();
+}
+
+var reload = false;
 var questionNum = 1;
-var maxQuestionNum = 150;
 var lastRoundWinner = "null";
 var roundWinnerScore = 0;
 var roundWinnerStreak = 0;
@@ -22,17 +62,12 @@ var lastBestTime = 0;
 var lastBestStreakPlayer = "null";
 var lastBestStreak = 0;
 var players = [];
-var names = [];
-var scores = [];
-var streaks = [];
-var times = [];
-var bestTimes = [];
 
 /* defaults
 
+var reload = false;
 var questionNum = 1;
-var maxQuestionNum = 150;
-var lastRoundWinner = "0";
+var lastRoundWinner = "null";
 var roundWinnerScore = 0;
 var roundWinnerStreak = 0;
 var lastBestTimePlayer = "null";
@@ -40,36 +75,36 @@ var lastBestTime = 0;
 var lastBestStreakPlayer = "null";
 var lastBestStreak = 0;
 var players = [];
-var names = [];
-var scores = [];
-var streaks = [];
-var times = [];
-var bestTimes = [];
 
 */
 
-var Discord = require("discord.js");
-var fs = require("fs");
-var mybot = new Discord.Client();
 var trivia = false;
 var paused = false;
+var exit = false;
 var startQuestionNum = questionNum;
-var totalQuestions = 0;
 var questionTimestamp = 0;
 var answerText = "";
+var answerImage = "";
+var answerMusic = "";
 var answerArray = [];
 var answered = true;
 var questionTimeout;
 var hintTimeout;
 var skipTimeout;
+var typeTimeout;
+var triviaTimeout;
+var scheduleTimeout;
+var when = -1;
 var triviaChannel;
+var musicChannel;
 var allQuestionNum;
+var tieQuestionNum = 0;
 var attempts = 0;
-var special = ["ß", "ç", "ð", "ñ", "ý", "ÿ", "à", "á", "â", "ã", "ä", "å", "æ", "è", "é", "ê", "ë", "ì", "í", "î", "ï", "ò", "ó", "ô", "õ", "ö", "ù", "ú", "û", "ü", "ẞ", "Ç", "Ð", "Ñ", "Ý", "Ÿ", "À", "Á", "Â", "Ã", "Ä", "Å", "Æ", "È", "É", "Ê", "Ë", "Ì", "Í", "Î", "Ï", "Ò", "Ó", "Ô", "Õ", "Ö", "Ù", "Ú", "Û", "Ü"];
+var topTen = localize("d_topTenDefault");
+var resultsFilename = "";
 
 function getLine(line_no) {
 	var data = fs.readFileSync("shuffled.txt", "utf8");
-
 	var lines = data.split("\n");
 
 	if(+line_no > lines.length){
@@ -79,15 +114,47 @@ function getLine(line_no) {
 	return lines[+line_no];
 }
 
-function startTrivia(message) {
-	console.log("Started the trivia");
-	randomizeQuestions();
-	startQuestionNum = questionNum;
-	if (totalQuestions === 0) {
-		totalQuestions = maxQuestionNum - questionNum;
-	} else { //if second round or after, initialize data
-		questionNum = 0;
-		startQuestionNum = 0;
+function localize(line, arg1a, arg1b, arg2a, arg2b, arg3a, arg3b, arg4a, arg4b) {
+	var data = local[line];
+	if (!arg1a || !arg1b) {
+		return eval("`" + data + "`");
+
+		} else if (!arg2a || !arg2b) {
+		arg1a = arg1a.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+		return eval("`" + data.replace(new RegExp(arg1a, "g"), arg1b) + "`");
+	} else if (!arg3a || !arg3b) {
+		arg1a = arg1a.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+		arg2a = arg2a.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+		return eval("`" + data.replace(new RegExp(arg1a, "g"), arg1b).replace(new RegExp(arg2a, "g"), arg2b) + "`");
+	} else if (!arg4a || !arg4b) {
+		arg1a = arg1a.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+		arg2a = arg2a.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+		arg3a = arg3a.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+		return eval("`" + data.replace(new RegExp(arg1a, "g"), arg1b).replace(new RegExp(arg2a, "g"), arg2b).replace(new RegExp(arg3a, "g"), arg3b) + "`");
+	} else {
+		arg1a = arg1a.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+		arg2a = arg2a.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+		arg3a = arg3a.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+		arg4a = arg4a.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+		return eval("`" + data.replace(new RegExp(arg1a, "g"), arg1b).replace(new RegExp(arg2a, "g"), arg2b).replace(new RegExp(arg3a, "g"), arg3b).replace(new RegExp(arg4a, "g"), arg4b) + "`");
+	}
+}
+
+function deleteMessage(message) {
+	if(message.channel.type === "text" && message.channel.permissionsFor(bot.user).has("MANAGE_MESSAGES")) {
+		message.delete();
+	}
+}
+
+function startTrivia() {
+	clearTimeout(scheduleTimeout);
+	clearTimeout(triviaTimeout);
+	console.log(localize("c_start"));
+	
+	questionNum = 0;
+	startQuestionNum = 0;
+	tieQuestionNum = 0;
+	if (!reload) {
 		lastRoundWinner = "null";
 		roundWinnerScore = 0;
 		roundWinnerStreak = 0;
@@ -96,167 +163,353 @@ function startTrivia(message) {
 		lastBestStreakPlayer = "null";
 		lastBestStreak = 0;
 		players = [];
-		names = [];
-		scores = [];
-		streaks = [];
-		times = [];
-		bestTimes = [];
+		topTen = localize("d_topTenDefault");
 	}
-	mybot.sendMessage(message, "Attention, @everyone. The trivia round is starting. (" + totalQuestions + " questions out of " + allQuestionNum + ")", {tts: true});
+	
+	bot.user.setPresence({status: "online", activity: {type: "PLAYING", name: localize("d_game")}});
+	triviaChannel.send(localize("d_start"), {tts: settings.tts});
 	trivia = true;
-	questionTimeout = setTimeout(askQuestion, startTime, message);
+	questionTimeout = setTimeout(askQuestion, settings.startTime);
+	typeTimeout = setTimeout(function(){
+		if (trivia) {
+			triviaChannel.startTyping();
+		}
+	}, Math.max(settings.startTime - 5000, 0));
+	
+	if (musicChannel) {
+		musicChannel.send("~clear").then(message => {
+			musicChannel.send("~skip").then(message => {
+				musicChannel.send("~skip");
+		})});
+	}
 }
 
-function endTrivia(message, finished) {
+function endTrivia(finished) {
 	clearTimeout(questionTimeout);
 	clearTimeout(hintTimeout);
 	clearTimeout(skipTimeout);
-	if (finished) {
-		mybot.sendMessage(message, "Attention, @everyone. " + totalQuestions + " questions have been reached. The trivia round is ending.", {tts: true});
-	} else {
-		mybot.sendMessage(message, "Attention, @everyone. The trivia round is ending.", {tts: true});
-	}
-	var bestStreak = streaks.indexOf(Math.max.apply(Math, streaks)); // get index of player with best streak
-	var bestBestTime = bestTimes.indexOf(Math.min.apply(Math, bestTimes)); // get index of player with best best time
-	var avgTimes = [];
-	for (var i = 0; i < times.length; i++) {
-		avgTimes.push(times[i] / scores[i]);
-	}
-	var bestAvgTime = avgTimes.indexOf(Math.min.apply(Math, avgTimes)); // get index of player with best average time
+	clearTimeout(typeTimeout);
+	clearTimeout(scheduleTimeout);
+	outputScores(false);
 
-	mybot.sendMessage(message, "**1st Place**: <@" + players[0] + "> **Points**: " + scores[0] + " **Best streak**: " + streaks[0] + " **Avg. time**: " + (avgTimes[0] / 1000).toFixed(3) + " sec **Best time**: " + (bestTimes[0] / 1000).toFixed(3) + " sec\n**2nd Place**: <@" + players[1] + "> **Points**: " + scores[1] + " **Best streak**: " + streaks[1] + " **Avg. time**: " + (avgTimes[1] / 1000).toFixed(3) + " sec **Best time**: " + (bestTimes[1] / 1000).toFixed(3) + " sec\n**3rd Place**: <@" + players[2] + "> **Points**: " + scores[2] + " **Best streak**: " + streaks[2] + " **Avg. time**: " + (avgTimes[2] / 1000).toFixed(3) + " sec **Best time**: " + (bestTimes[2] / 1000).toFixed(3) + " sec\n\n**Best streak**: <@" + players[bestStreak] + "> with " + streaks[bestStreak] + "\n**Best time**: <@" + players[bestBestTime] + "> with " + (bestTimes[bestBestTime] / 1000).toFixed(3) + " sec\n**Best avg. time**: <@" + players[bestAvgTime] + "> with " + (avgTimes[bestAvgTime] / 1000).toFixed(3) + " sec");
+	triviaChannel.stopTyping();
+	
+	if (trivia) {
+		if (finished) {
+			triviaChannel.send(localize("d_end"), {tts: settings.tts});
+		} else {
+			triviaChannel.send(localize("d_stop"), {tts: settings.tts});
+		}
+		
+		var streaks = players.map(function(a) {
+			return a.streak;
+		});
+		var bestTimes = players.map(function(a) {
+			return a.bestTime;
+		});
+		var avgTimes = players.map(function(a) {
+			return a.time / a.score;
+		});
+		
+		var bestStreak = streaks.indexOf(Math.max.apply(Math, streaks)); // get index of player with best streak
+		var bestBestTime = bestTimes.indexOf(Math.min.apply(Math, bestTimes)); // get index of player with best best time
+		var bestAvgTime = avgTimes.indexOf(Math.min.apply(Math, avgTimes)); // get index of player with best average time
 
+		if (players.length > 0) {
+			triviaChannel.send(((typeof players[0] !== "undefined") ? `**${localize("t_first")}**: <@${players[0].id}> **${localize("t_points")}**: ${players[0].score} **${localize("t_bestStreak")}**: ${players[0].streak} **${localize("t_avgTime")}**: ${(players[0].time / players[0].score / 1000).toFixed(3)} ${localize("t_sec")} **${localize("t_bestTime")}**: ${(players[0].bestTime / 1000).toFixed(3)} ${localize("t_sec")}\n` + ((typeof players[1] !== "undefined") ? `**${localize("t_second")}**: <@${players[1].id}> **${localize("t_points")}**: ${players[1].score} **${localize("t_bestStreak")}**: ${players[1].streak} **${localize("t_avgTime")}**: ${(players[1].time / players[1].score / 1000).toFixed(3)} ${localize("t_sec")} **${localize("t_bestTime")}**: ${(players[1].bestTime / 1000).toFixed(3)} ${localize("t_sec")}\n` : "") + ((typeof players[2] !== "undefined") ? `**${localize("t_third")}**: <@${players[2].id}> **${localize("t_points")}**: ${players[2].score} **${localize("t_bestStreak")}**: ${players[2].streak} **${localize("t_avgTime")}**: ${(players[2].time / players[2].score / 1000).toFixed(3)} ${localize("t_sec")} **${localize("t_bestTime")}**: ${(players[2].bestTime / 1000).toFixed(3)} ${localize("t_sec")}\n` : "") + `\n**${localize("t_bestBestStreak")}**: <@${players[bestStreak].id}> ${localize("t_with")} ${players[bestStreak].streak}\n**${localize("t_bestBestTime")}**: <@${players[bestBestTime].id}> ${localize("t_with")} ${(players[bestBestTime].bestTime / 1000).toFixed(3)} ${localize("t_sec")}\n**${localize("t_bestAvgTime")}**: <@${players[bestAvgTime].id}> ${localize("t_with")} ${(players[bestAvgTime].time / players[bestAvgTime].score / 1000).toFixed(3)} ${localize("t_sec")}` : ""));
+			bot.users.fetch(players[0].id).then((user) => {
+				user.send(localize("d_winner"));
+			});
+		}
+	}
+	
 	trivia = false;
-	console.log("Stopped the trivia");
-	console.log("1st Place: " + names[0] + " <@" + players[0] + "> Points: " + scores[0] + " Best time: " + bestTimes[0] / 1000);
-	console.log("2nd Place: " + names[1] + " <@" + players[1] + "> Points: " + scores[1] + " Best time: " + bestTimes[1] / 1000);
-	console.log("3rd Place: " + names[2] + " <@" + players[2] + "> Points: " + scores[2] + " Best time: " + bestTimes[2] / 1000);
-	var outputFilename = "results" + Date.now() + ".html";
-	fs.writeFileSync(outputFilename, "<html><head><title>Discord Trivia Bot Results</title></head>\n<body>\n<h1>Winners of round</h1>\n<p>(ended at " + (new Date()).toUTCString() + ")</p>\n<table border=\"1\">\n<tr><th>Rank</th><th>Name</th><th>User ID</th><th>Score</th><th>Best Streak</th><th>Best Time</th><th>Avg. Time</th></tr>");
-	for (var i = 0; i < players.length; i++) {
-		fs.appendFileSync(outputFilename, "\n<tr><td>" + getOrdinal(i + 1) + "</td><td>" + names[i] + "</td><td>&lt;@" + players[i] + "&gt;</td><td>" + scores[i] + "</td><td>" + streaks[i] + "</td><td>" + (bestTimes[i] / 1000).toFixed(3) + "</td><td>" + ((avgTimes[i]) / 1000).toFixed(3) + "</td></tr>");
-	}
-	fs.appendFileSync(outputFilename, "\n</table>\n<p>Discord Trivia Bot created by <a href=\"http://bulbapedia.bulbagarden.net/wiki/User:Abcboy\">abcboy</a></p>\n</body>\n</html>");
+	bot.user.setPresence({status: "idle", activity: {type: 0, name: ""}});
+	console.log(localize("c_stop"));
+	console.log(localize("t_first") + ": " + ((typeof players[0] !== "undefined") ? `${players[0].name} <@${players[0].id}> ${localize("t_points")}: ${players[0].score} ${localize("t_bestTime")}: ${players[0].bestTime / 1000}` : localize("t_noOne")));
+	console.log(localize("t_second") + ": " + ((typeof players[1] !== "undefined") ? `${players[1].name} <@${players[1].id}> ${localize("t_points")}: ${players[1].score} ${localize("t_bestTime")}: ${players[1].bestTime / 1000}` : localize("t_noOne")));
+	console.log(localize("t_third") + ": " + ((typeof players[2] !== "undefined") ? `${players[2].name} <@${players[2].id}> ${localize("t_points")}: ${players[2].score} ${localize("t_bestTime")}: ${players[2].bestTime / 1000}` : localize("t_noOne")));
+	
+	checkSchedule();
 }
 
-function randomizeQuestions() {
+function outputScores(debug) {	
+	var outputFilename = `results${Date.now()}.html`;
+	resultsFilename = "";
+	
+	fs.writeFileSync(`results${Date.now()}.json`, `{
+	"version": "${versionString}",
+	"timestamp": "${(new Date()).toUTCString()}",
+	"aborted": ${debug},
+	"reload": true,
+	"questionNum": ${questionNum},
+	"lastRoundWinner": "${lastRoundWinner}",
+	"roundWinnerScore": ${roundWinnerScore},
+	"roundWinnerStreak": ${roundWinnerStreak},
+	"lastBestTimePlayer": "${lastBestTimePlayer}",
+	"lastBestTime": ${lastBestTime},
+	"lastBestStreakPlayer": "${lastBestStreakPlayer}",
+	"lastBestStreak": ${lastBestStreak},
+	"players": ${JSON.stringify(players)}
+	}`);
+
+	fs.writeFileSync(outputFilename, "<!DOCTYPE html><html><head><title>Discord Trivia Bot Results</title><meta charset=\"UTF-8\"></head>\n<body>\n<h1>Winners of round</h1>\n<p");
+	if (debug) {
+		fs.appendFileSync(outputFilename, " style=\"color: red\">(aborted");
+	} else {
+		fs.appendFileSync(outputFilename, ">(ended");
+	}
+	fs.appendFileSync(outputFilename, ` at ${(new Date()).toUTCString()})</p>\n<table border=\"1\">\n<tr><th>Rank</th><th>Name</th><th>User ID</th><th>Score</th><th>Best Streak</th><th>Best Time</th><th>Avg. Time</th></tr>`);
+	for (var i = 0; i < players.length; i++) {
+		fs.appendFileSync(outputFilename, `\n<tr><td>${getOrdinal(i + 1)}</td><td>${players[i].name}</td><td>&lt;@${players[i].id}&gt;</td><td>${players[i].score}</td><td>${players[i].streak}</td><td>${(players[i].bestTime / 1000).toFixed(3)}</td><td>${(players[i].time / players[i].score / 1000).toFixed(3)}</td></tr>`);
+	}
+	fs.appendFileSync(outputFilename, "\n</table>\n<p>Discord Trivia Bot (v" + versionString + ") created by <a href=\"https://bulbapedia.bulbagarden.net/wiki/User:Abcboy\">abcboy</a></p>");
+	if (debug) {
+		fs.appendFileSync(outputFilename, `\n<h2>Error info:</h2><ul>\n<li>var reload = true;</li>\n<li>var questionNum = ${questionNum};</li>\n<li>var lastRoundWinner = "${lastRoundWinner}";</li>\n<li>var roundWinnerScore = ${roundWinnerScore};</li>\n<li>var roundWinnerStreak = ${roundWinnerStreak};</li>\n<li>var lastBestTimePlayer = "${lastBestTimePlayer}";</li>\n<li>var lastBestTime = ${lastBestTime};</li>\n<li>var lastBestStreakPlayer = "${lastBestStreakPlayer}";</li>\n<li>var lastBestStreak = ${lastBestStreak};</li>\n<li>var players = ${JSON.stringify(players)};</li>`);
+	}
+	fs.appendFileSync(outputFilename, "\n</body>\n</html>");
+}
+
+function downloadQuestions(callback) {
+	request.get(settings.downloadUrl, function (error, response, body) {
+		if (!error && response.statusCode == 200) {
+			fs.writeFileSync(settings.filepath, "\uFEFF<!-- DISCORD TRIVIA FILE -->\n" + body.replace(/^\uFEFF/, ''));
+			console.log(localize("c_downloadSuccess"));
+		} else {
+			console.log(localize("c_downloadFailure"));
+		}
+		if (typeof callback === "function") {
+			callback(startTrivia);
+		}
+	});
+}
+
+function randRange(n) {
+	// return Math.floor(Math.random() * n);
+	var limit = Math.pow(2, 32) - (Math.pow(2, 32) % n);
+	var rand = parseInt(crypto.randomBytes(4).toString('hex'), 16);
+	while (rand >= limit) {
+        rand = parseInt(crypto.randomBytes(4).toString('hex'), 16);
+    }
+	return Math.floor(rand / Math.pow(2, 32) * n);
+}
+
+function randomizeQuestions(callback) {
 	var data;
 	try {
-		data = fs.readFileSync(filepath, "utf8");
+		data = fs.readFileSync(settings.filepath, "utf8");
 	} catch(err) {
-		console.log("File read error.");
+		console.log(localize("c_fileReadError"));
 		data = "null*null";
 	}
-	var lines = data.replace(/\r\n/g, "\n").split("\n");
-
+	var lines = data.replace(/\r\n/g, "\n").replace(/<!--(.|\n)*?-->/g, "").replace(/\/\*(.|\n)*?\*\//g, "").replace(/\n+/g, "\n").trim().split("\n");
 	allQuestionNum = lines.length;
+	// shuffles questions
 	for(var i = allQuestionNum - 1; i > 0; i--) {
-		var j = Math.floor(Math.random() * (i + 1));
+		var j = randRange(i + 1);
+		// var j = Math.floor(Math.random() * (i + 1));
 		var tmp = lines[i];
 		lines[i] = lines[j];
 		lines[j] = tmp;
 	}
-
-	if (maxQuestionNum > lines.length) {
-		maxQuestionNum = allQuestionNum;
+	// moves questions that have a chance of being moved to the bottom
+	for(var i = 0; i < lines.length; i++) {
+		if (lines[i].indexOf("{") !== -1 && lines[i].indexOf("}") !== -1) {
+			var chance = Number(lines[i].match(/\{(.*)\}/)[1]);
+			if (!isNaN(chance))
+			{
+				if (Math.random() < chance) {
+					lines.push(lines.splice(i, 1)[0].replace(/\{.*\}/, ""));
+					i--;
+				} else {
+					lines[i] = lines[i].replace(/\{.*\}/, "");
+				}
+			}
+		}
 	}
-
-	if (totalQuestions > lines.length) {
-		totalQuestions = allQuestionNum;
+	
+	if (settings.maxQuestionNum > allQuestionNum) {
+		settings.maxQuestionNum = allQuestionNum;
 	}
+	fs.writeFileSync("shuffled.txt", lines.join("\n"));
+	console.log(localize("c_scrambled"));
+	
+	if (typeof callback === "function") {
+		callback();
+	}
+}
 
-	lines = lines.join("\n");
-	fs.writeFileSync("shuffled.txt", lines);
-	console.log("Questions scrambled to shuffled.txt");
+function clean(unclean) {
+	unclean = unclean.toLowerCase();
+	for (var i = 0; i < local.clean.length; i++) {
+		unclean = unclean.replace(new RegExp(local.clean[i][0], "g"), local.clean[i][1]);
+	}
+	return unclean.trim();
+}
+
+function cleanTypos(unclean) {
+	for (var i = 0; i < local.typos.length; i++) {
+		unclean = unclean.replace(new RegExp(local.typos[i][0], "g"), local.typos[i][1]);
+	}
+	return unclean;
 }
 
 function parseAnswer(answer, correct) {
-	function clean(unclean) {
-		return unclean.toLowerCase().trim().replace(/ß/g,"ss").replace(/à/g,"a").replace(/á/g,"a").replace(/â/g,"a").replace(/ã/g,"a").replace(/ä/g,"a").replace(/å/g,"a").replace(/æ/g,"ae").replace(/ç/g,"c").replace(/ð/g,"d").replace(/è/g,"e").replace(/é/g,"e").replace(/ê/g,"e").replace(/ë/g,"e").replace(/ì/g,"i").replace(/í/g,"i").replace(/î/g,"i").replace(/ï/g,"i").replace(/ñ/g,"n").replace(/ò/g,"o").replace(/ó/g,"o").replace(/ô/g,"o").replace(/õ/g,"o").replace(/ö/g,"o").replace(/ù/g,"u").replace(/ú/g,"u").replace(/û/g,"u").replace(/ü/g,"u").replace(/ý/g,"y").replace(/ÿ/g,"y").replace(/&/g,"and").replace(/-/g," ").replace(/ +(?= )/g,"").replace(/[^a-zA-Z0-9 ]/g, "");
-	}
-	function cleanTypos(unclean) {
-		return unclean.replace(/kn/g,"n").replace(/y/g,"i").replace(/k/g,"c").replace(/x/g,"c").replace(/q/g,"c").replace(/e/g,"a").replace(/ah/g,"a").replace(/u/g,"o").replace(/ph/g,"f").replace(/m/g,"n").replace(/ll/g,"l").replace(/aa/g,"a").replace(/oo/g,"o").replace(/cc/g,"c").replace(/z/g,"s");
-	}
-	// string is lowercased, trimmed, and multiple spaces removed, é is turned to e, & is turned to and, all non-alphanumeric characters removed
+	// string is lowercased, trimmed, and multiple spaces removed, accented characters are normalized, & is turned to and, all non-alphanumeric characters removed
 	var cleanAnswer = clean(answer);
 	for (var i = 0; i < correct.length; i++) {
 		// each answer choice is cleaned and compared
-		if ((cleanAnswer === clean(correct[i])) || (cleanTypos(cleanAnswer) === cleanTypos(clean(correct[i])))) {
+		if ((answer === correct[i]) || (cleanAnswer.length > 0 && ((cleanAnswer === clean(correct[i])) || (cleanTypos(cleanAnswer) === cleanTypos(clean(correct[i])))))) {
 			return true;
 		}
 	}
 	return false;
 }
 
-function askQuestion(message) {
-	if (questionNum < maxQuestionNum && trivia) {
+function askQuestion() {
+	clearTimeout(questionTimeout);
+	clearTimeout(hintTimeout);
+	clearTimeout(skipTimeout);
+	clearTimeout(typeTimeout);
+	triviaChannel.stopTyping();
+	
+	// check for a tie
+	if (settings.tiebreaker && players.length > 1 && questionNum + tieQuestionNum < allQuestionNum && questionNum >= settings.maxQuestionNum && players[0].score === players[1].score) {
+		if (tieQuestionNum === 0) {
+			triviaChannel.send(localize("d_tiebreaker"));
+		}
+		tieQuestionNum++;
+	}
+	
+	// continue unless we've reached maxQuestionNum
+	if (questionNum < (settings.maxQuestionNum + tieQuestionNum) && trivia) {
 		if (attempts > 0) {
-			mybot.login(botUsername, botPassword);
+			bot.login(settings.token).then(() => {
+				attempts = 0;
+			}).catch(err => {
+				reconnect();
+			});
 			if (!answered) {
-				mybot.sendMessage(message, "The last question has been skipped due to connectivity issues. No points will be awarded for it.");
+				triviaChannel.send(localize("d_skipConnect"));
 				answered = true;
 			}
 		}
-
+		
 		var line = getLine(questionNum);
 		questionNum++;
-		var questionText = line.substring(0,line.indexOf("*")).replace(/_/g,"\\_");
-		if (line.indexOf("`") !== -1) {
-			answerArray = line.substring(line.indexOf("*")+1,line.indexOf("`")).split("*");
-			answerText = answerArray[0] + " (" + line.substring(line.indexOf("`")+1).replace(/_/g,"\\_") + ")";
+		var questionText = line.substring(0,line.indexOf("*")).replace(/\[.*\]/,"").replace(/\<.*\>/,"").replace(/_/g,"\\_").trim();
+		
+		if (line.indexOf("`") !== -1) { // if there's a note
+			answerArray = line.substring(line.indexOf("*")+1,line.indexOf("`")).replace(/\[.*\]/,"").replace(/\<.*\>/,"").split("*");
+			answerText = answerArray[0].trim() + " (" + line.substring(line.indexOf("`")+1).replace(/\[.*\]/,"").replace(/\<.*\>/,"").replace(/_/g,"\\_") + ")";
 		} else {
-			answerArray = line.substring(line.indexOf("*")+1).split("*");
-			answerText = answerArray[0];
+			answerArray = line.substring(line.indexOf("*")+1).replace(/\[.*\]/,"").replace(/\<.*\>/,"").split("*");
+			answerText = answerArray[0].trim();
 		}
-
-		mybot.sendMessage(message, (questionNum - startQuestionNum).toString() + ". **" + questionText + "**", {tts: false}, function(error,questionMessage){
-			if (error) {
-				reconnect();
-				questionNum--;
-			} else {
+		
+		if (line.indexOf("<") !== -1 && line.indexOf(">") !== -1) { // if there's an answer attachment
+			answerImage = line.match(/\<(.*)\>/)[1];
+			console.log(answerImage);
+		} else {
+			answerImage = "";
+		}
+		
+		if (musicChannel && line.indexOf("[v|") !== -1 && line.indexOf("]") !== -1) { // if there's a music attachment
+			answerMusic = line.match(/\[v\|(.*)\]/)[1];
+			musicChannel.send("~play " + answerMusic);
+			console.log(answerMusic);
+		} else {
+			answerMusic = "";
+		}
+		
+		if (line.indexOf("[v|") === -1 && /\[(.*\..*)\]/.test(line)) { // if there's an image attachment
+			filename = line.match(/\[(.*\..*)\]/)[1];
+			var filetype = path.extname(filename);
+			fs.readFile(filename, (err, data) => {
+				if (err) {
+					console.log(localize("c_attachmentFailure", "${filename}", filename));
+				} else {
+					triviaChannel.send(`${(questionNum - startQuestionNum).toString()}. **${questionText}**`, new Discord.MessageAttachment(data, `attachment.${filetype}`)).then(questionMessage => {
+						attempts = 0;
+						console.log(questionText);
+						console.log(answerArray);
+						questionTimestamp = questionMessage.createdTimestamp;
+						console.log(questionTimestamp);
+						answered = false;
+					}).catch(err => {
+						console.log(localize("c_attachmentFailure", "${filename}", filename));
+						triviaChannel.send(`${(questionNum - startQuestionNum).toString()}. **${questionText}**`).then(questionMessage => {
+							attempts = 0;
+							console.log(questionText);
+							console.log(answerArray);
+							questionTimestamp = questionMessage.createdTimestamp;
+							console.log(questionTimestamp);
+							answered = false;
+						}).catch(err => {
+							questionNum--;
+							reconnect();
+						});
+					});
+				}
+			});
+			hintTimeout = setTimeout(hint, settings.hintTime);
+			skipTimeout = setTimeout(skipQuestion, settings.skipTime + 350);
+		} else { // if there's no attachment
+			triviaChannel.send(`${(questionNum - startQuestionNum).toString()}. **${questionText}**`).then(questionMessage => {
 				attempts = 0;
 				console.log(questionText);
 				console.log(answerArray);
-				answered = false;
-				questionTimestamp = questionMessage.timestamp;
+				questionTimestamp = questionMessage.createdTimestamp;
 				console.log(questionTimestamp);
-				hintTimeout = setTimeout(hint, hintTime, message);
-				skipTimeout = setTimeout(skipQuestion, skipTime, message);
+				answered = false;
+			}).catch(err => {
+				questionNum--;
+				reconnect();
+			});
+			if (answerMusic === "") {
+				hintTimeout = setTimeout(hint, settings.hintTime);
+				skipTimeout = setTimeout(skipQuestion, settings.skipTime + 350);
+			} else { // add 15 seconds for music question
+				hintTimeout = setTimeout(hint, settings.hintTime + 15000);
+				skipTimeout = setTimeout(skipQuestion, settings.skipTime + 15000 + 350);
 			}
-		});
+		}
 	}
 	else {
-		endTrivia(message, true);
+		endTrivia(true);
 	}
 }
 
-function hint(message) {
+function hint() {
+	clearTimeout(questionTimeout);
+	clearTimeout(hintTimeout);
+	clearTimeout(typeTimeout);
 	var hintType = Math.floor(Math.random() * 3); // 3 types of hint (0, 1, 2)
 	var roundHint;
 	if (answerArray[0].length < 3) { // if 2 letters or shorter, length hint
 		roundHint = answerArray[0].length;
-		mybot.sendMessage(message, "**Here's a hint** (no. of characters): " + roundHint);
-	} else if (answerArray[0].length < 5) { // if 4 letters or shorter, last letter hint
+		triviaChannel.send(`**${localize("d_hintNotice")}** (${localize("d_hintTypeLen")}): ${roundHint}`);
+	} else if (answerArray[0].length < 5) { // if 4 letters or shorter, last letters hint
 		roundHint = answerArray[0].slice(-1);
-		mybot.sendMessage(message, "**Here's a hint** (last character): " + roundHint);
+		triviaChannel.send(`**${localize("d_hintNotice")}** (${localize("d_hintTypeLst")}): ${roundHint}`);
 	} else if (hintType === 0) { //scramble the hint
 		roundHint = hintScramble();
-		mybot.sendMessage(message, "**Here's a hint** (scrambled): " + roundHint);
-	} else if (hintType === 1) { //replace 90% with blanks
+		triviaChannel.send(`**${localize("d_hintNotice")}** (${localize("d_hintTypeScr")}): ${roundHint}`);
+	} else if (hintType === 1) { //replace 60% with blanks
 		roundHint = hintBlanks();
-		mybot.sendMessage(message, "**Here's a hint** (fill in the blanks): " + roundHint);
+		triviaChannel.send(`**${localize("d_hintNotice")}** (${localize("d_hintTypeBln")}): ${roundHint}`);
 	} else if (hintType === 2) { // fill in the non-vowels
 		roundHint = answerArray[0].replace(/[b-df-hj-np-tv-zB-DF-HJ-NP-TV-Z0-9ßçðñýÿẞÇÐÑÝŸ]/g,"\\_");
-		if (roundHint === answerArray[0] || roundHint === answerArray[0].replace(/[a-zA-Z0-9ßçðñýÿàáâãäåæèéêëìíîïòóôõöùúûüẞÇÐÑÝŸÀÁÂÃÄÅÆÈÉÊËÌÍÎÏÒÓÔÕÖÙÚÛÜ]/g,"\\_")) { //if hint has no vowels or is all vowels
-			if (Math.random < 0.5) { // fill in the blanks
+		if (roundHint === answerArray[0] || roundHint === roundHint.replace(/[aeiouAEIOUàáâãäåæèéêëìíîïòóôõöùúûüÀÁÂÃÄÅÆÈÉÊËÌÍÎÏÒÓÔÕÖÙÚÛÜ]/g,"\\_")) { //if hint has no vowels or is all vowels
+			if (Math.random() < 0.5) { // fill in the blanks
 				roundHint = hintBlanks();
-				mybot.sendMessage(message, "**Here's a hint** (fill in the blanks): " + roundHint);
+				triviaChannel.send(`**${localize("d_hintNotice")}** (${localize("d_hintTypeBln")}): ${roundHint}`);
 			} else { // scrambled hint
 				roundHint = hintScramble();
-				mybot.sendMessage(message, "**Here's a hint** (scrambled): " + roundHint);
+				triviaChannel.send(`**${localize("d_hintNotice")}** (${localize("d_hintTypeScr")}): ${roundHint}`);
 			}
 		} else {
-			mybot.sendMessage(message, "**Here's a hint** (vowels): " + roundHint);
+			triviaChannel.send(`**${localize("d_hintNotice")}** (${localize("d_hintTypeVow")}): ${roundHint}`);
 		}
 	}
 	console.log(roundHint);
@@ -285,7 +538,7 @@ function hintBlanks() {
 	for(var i = 0;i<s.length;i++){
 		var code = s[i].charCodeAt(0);
 		// first character is never shown, last character is always shown
-		if (i === 0 || ((i !== s.length - 1) && (Math.random() < 0.9) && ((code > 47 && code < 58) || (code > 64 && code < 91) || (code > 96 && code < 123) || (special.indexOf(s[i]) !== -1)))) { // if part of the 90% and alphanumeric or special
+		if (i === 0 || ((i !== s.length - 1) && (Math.random() < 0.40) && ((code > 47 && code < 58) || (code > 64 && code < 91) || (code > 96 && code < 123) || (local.special.indexOf(s[i]) !== -1)))) { // if part of the 60% and alphanumeric or special
 			blanks += "\\_";
 		}
 		else {
@@ -295,306 +548,582 @@ function hintBlanks() {
 	return blanks;
 }
 
-function skipQuestion(message) {
-	mybot.sendMessage(message, "*Time's up!* **Answer**: " + answerText, {tts: false}, function(error, timestamp){
-		if (error) {
+function skipQuestion() {
+	clearTimeout(questionTimeout);
+	clearTimeout(hintTimeout);
+	clearTimeout(skipTimeout);
+	clearTimeout(typeTimeout);
+	triviaChannel.stopTyping();
+	if (answerImage !== "") { // answer attachments
+		fs.readFile(answerImage, (err, data) => {
+			if (err) {
+				console.log(localize("c_attachmentFailure", "${filename}", answerImage));
+			} else {
+				triviaChannel.send(localize("d_skip"), new Discord.MessageAttachment(data, path.basename(answerImage))).catch(err => {
+					console.log(localize("c_attachmentFailure", "${filename}", answerImage));
+					triviaChannel.send(localize("d_skip")).catch(err => {
+						reconnect();
+					});
+				});
+			}
+		});
+	} else {
+		triviaChannel.send(localize("d_skip")).catch(err => {
 			reconnect();
-		} else {
-			lastRoundWinner = "null";
-			answered = true;
-			questionTimeout = setTimeout(askQuestion, betweenTime, message);
+		});
+	}
+	
+	if (answerMusic !== "") { // music
+		musicChannel.send("~clear").then(message => {
+			musicChannel.send("~skip").then(message => {
+				musicChannel.send("~skip");
+			})
+		}).catch(err => {
+			console.log(localize("c_musicFailure", "${answerMusic}", answerMusic));
+		});
+	}
+	if (roundWinnerStreak > 5) {
+		triviaChannel.send(localize("d_skipEndStreak"));
+	}
+	lastRoundWinner = "null";
+	roundWinnerStreak = -1;
+	answered = true;
+	questionTimeout = setTimeout(askQuestion, settings.betweenTime);
+	typeTimeout = setTimeout(function(){
+		if (trivia) {
+			triviaChannel.startTyping();
 		}
-	});
+	}, Math.max(settings.betweenTime - 5000, 0));
+}
+
+function checkSchedule() {
+	clearTimeout(scheduleTimeout);
+	if (settings.schedule.length === 0) {
+		return;
+	} else {
+		settings.schedule = settings.schedule.sort(function(a, b) {
+			return a - b;
+		});
+		while (settings.schedule.length > 0 && settings.schedule[0] < Date.now() - 60000) {
+			var oldSchedule = settings.schedule.shift();
+		}
+		if (settings.schedule.length > 0) {
+			when = settings.schedule[0];
+		} else {
+			when = -1;
+		}
+		
+		if (settings.schedule[0] < Date.now() + 600000) {
+			clearTimeout(triviaTimeout);
+			triviaTimeout = setTimeout(function() {
+				if (settings.schedule[0] < Date.now()) {
+					var oldSchedule = settings.schedule.shift();
+					if (settings.schedule.length > 0) {
+						when = settings.schedule[0];
+					} else {
+						when = -1;
+					}
+				}
+		
+				if (!trivia && !paused && settings.autoDownload) {
+					trivia = true;
+					downloadQuestions(randomizeQuestions);
+				} else if (!trivia && !paused) {
+					trivia = true;
+					randomizeQuestions(startTrivia)
+				}
+			}, Math.max(1, settings.schedule[0] - Date.now()));
+		} else if (settings.schedule.length > 0) {
+			scheduleTimeout = setTimeout(checkSchedule, 600000);
+		}
+	}
 }
 
 function getOrdinal(n) {
-	var s=["th","st","nd","rd"],
-		v=n%100;
-	return n+(s[(v-20)%10]||s[v]||s[0]);
-}
-
-function sortByArray(sortThis, sortBy) {
-	var newArray = sortThis;
-	newArray.sort(function(a, b) {
-		return sortBy[sortThis.indexOf(b)] - sortBy[sortThis.indexOf(a)];
-	});
-	return newArray;
+	return local.ordinals[n % local.ordinals.length].replace("$", n);
 }
 
 function reconnect() {
-	if (attempts === 0) {
-		clearTimeout(questionTimeout);
-		clearTimeout(hintTimeout);
-		clearTimeout(skipTimeout);
-
-		var outputFilename = "results" + Date.now() + ".html";
-		fs.writeFileSync(outputFilename, "<html><head><title>Discord Trivia Bot Results</title></head>\n<body>\n<h1>Winners of round</h1>\n<p style=\"color: red\">(aborted at " + (new Date()).toUTCString() + ")</p>\n<table border=\"1\">\n<tr><th>Rank</th><th>Name</th><th>User ID</th><th>Score</th><th>Best Streak</th><th>Best Time</th><th>Avg. Time</th></tr>");
-		for (var i = 0; i < players.length; i++) {
-			fs.appendFileSync(outputFilename, "\n<tr><td>" + getOrdinal(i + 1) + "</td><td>" + names[i] + "</td><td>&lt;@" + players[i] + "&gt;</td><td>" + scores[i] + "</td><td>" + streaks[i] + "</td><td>" + (bestTimes[i] / 1000).toFixed(3) + "</td><td>" + ((times[i] / scores[i]) / 1000).toFixed(3) + "</td></tr>");
+	if (trivia) {
+		if (attempts === 0) {
+			clearTimeout(questionTimeout);
+			clearTimeout(hintTimeout);
+			clearTimeout(skipTimeout);
+			clearTimeout(typeTimeout);
+			outputScores(true);
+			console.log(localize("c_reconnect"));
+			questionTimeout = setTimeout(askQuestion, 10000);
+			console.log(localize("c_reconnectAttempt"));
+		} else {
+			questionTimeout = setTimeout(askQuestion, 10000);
+			console.log(localize("c_reconnectReattempt"));
 		}
-		fs.appendFileSync(outputFilename, "\n</table>\n<p>Discord Trivia Bot created by <a href=\"http://bulbapedia.bulbagarden.net/wiki/User:Abcboy\">abcboy</a></p>\n<h2>Error info:</h2><ul>");
-		fs.appendFileSync(outputFilename, "\n<li>var questionNum = " + questionNum + ";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var maxQuestionNum = " + maxQuestionNum + ";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var lastRoundWinner = \"" + lastRoundWinner + "\";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var roundWinnerScore = " + roundWinnerScore + ";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var roundWinnerStreak = " + roundWinnerStreak + ";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var lastBestTimePlayer = \"" + lastBestTimePlayer + "\";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var lastBestTime = " + lastBestTime + ";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var lastBestStreakPlayer = \"" + lastBestStreakPlayer + "\";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var lastBestStreak = " + lastBestStreak + ";</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var players = [\"" + players.join("\",\"") + "\"];</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var names = [\"" + names.join("\",\"") + "\"];</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var scores = [" + scores.join() + "];</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var streaks = [" + streaks.join() + "];</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var times = [" + times.join() + "];</li>");
-		fs.appendFileSync(outputFilename, "\n<li>var bestTimes = [" + bestTimes.join() + "];</li></ul>");
-		fs.appendFileSync(outputFilename, "\n</body>\n</html>");
-		console.log("Connection lost. Existing score data has been dumped.");
-		questionTimeout = setTimeout(askQuestion, 10000, triviaChannel);
-		console.log("Attempting to reconnect in 10 seconds...");
-	} else {
-		questionTimeout = setTimeout(askQuestion, 10000, triviaChannel);
-		console.log("Attempt failed. Attempting to reconnect in 10 seconds...");
+		attempts++;
 	}
-	attempts++;
 }
 
-mybot.on("error", function(error){
-	throw error;
+bot.on("error", (error) => {
+	if (attempts === 0 && trivia) {
+		console.log(error);
+		reconnect();
+	}
 });
 
-mybot.on("message", function(message){
+bot.on("disconnect", (error) => {
+	/*if (attempts === 0) {
+		console.log(error);
+		reconnect();
+	}*/
+});
+
+bot.on("message", (message) => {
+    var deleteAfter = false;
 	// sets trivia channel
 	var privileged;
 	if (triviaChannel != null) {
-		privileged = (triviaChannel.permissionsOf(message.author).hasPermission("manageServer") || message.author.id === mybot.user.id);
-	} else if (message.channel.name === "trivia" || message.channel.name === "test") {
-		triviaChannel = message.channel;
-		privileged = (triviaChannel.permissionsOf(message.author).hasPermission("manageServer") || message.author.id === mybot.user.id);
+		if (triviaChannel.permissionsFor(message.author) == null) {
+			privileged = false;
+		} else {
+			privileged = (triviaChannel.permissionsFor(message.author).has("BAN_MEMBERS") || message.author.id === bot.user.id);
+		}
+	} else if (settings.allowedChannels.includes(message.channel.name)) {
+		if (!settings.triviaChannel || settings.triviaChannel === message.channel.id) {
+			triviaChannel = message.channel;
+		}
+		privileged = (triviaChannel.permissionsFor(message.author).has("BAN_MEMBERS") || message.author.id === bot.user.id);
+	}
+	
+	if (message.channel.isPrivate && message.author.id !== bot.user.id) {
+		console.log("**" + localize("c_incomingDM", "${message.author.username}", message.author.username, "${message.cleanContent}", message.cleanContent)+ "**");
 	}
 	
 	// if anyone says "!info" in the chat or DM it, they get a DM with their current score and place
 	if (message.content === "!info") {
-		mybot.deleteMessage(message);
-		var authorIndex = players.indexOf(message.author.id);
-		var score = scores[authorIndex];
-		var streak = streaks[authorIndex];
-		var place = getOrdinal(authorIndex + 1);
-		var bestTime = (bestTimes[authorIndex] / 1000).toFixed(3);
-		var time = times[authorIndex];
-		var avgTime = (time / score / 1000).toFixed(3);
-		if (typeof score === "undefined") { // if the user hasn't played
-			score = "0";
-			streak = 0;
-			place = "—";
-			bestTime = "—";
-			avgTime = "—";
+		var authorIndex;
+		for (var i = 0; i < players.length; i++) {
+			if (players[i].id === message.author.id) {
+				authorIndex = i;
+				break;
+			}
 		}
-		mybot.sendMessage(message.author, "Your info:\n**Points**: " + score + " **Place**: " + place + " **Best streak**: " + streak + " **Best time**: " + bestTime + " sec **Avg. time**: " + avgTime + " sec");
+		if (typeof players[authorIndex] === "undefined") { // if the user hasn't played
+			var score = "0";
+			var streak = 0;
+			var place = "—";
+			var bestTime = "—";
+			var avgTime = "—";
+		} else {
+			var score = players[authorIndex].score;
+			var streak = players[authorIndex].streak;
+			var place = getOrdinal(authorIndex + 1);
+			var bestTime = (players[authorIndex].bestTime / 1000).toFixed(3);
+			var time = players[authorIndex].time;
+			var avgTime = (time / score / 1000).toFixed(3);
+		}
+		message.author.send(`${localize("d_info")}:\n**${localize("t_points")}**: ${score} **${localize("t_place")}**: ${place} **${localize("t_bestStreak")}**: ${streak} **${localize("t_bestTime")}**: ${bestTime} ${localize("t_sec")} **${localize("t_avgTime")}**: ${avgTime} ${localize("t_sec")}`);
+		deleteAfter = true;
 	}
 
 	// if anyone says "!top" in the chat or DM it, they get a DM with the top ten
 	else if (message.content === "!top" || message.content === "!records") {
-		mybot.deleteMessage(message);
-		var place = 0;
-		var topTen = "Top ten:";
-		if (players.length === 0) {
-			topTen = topTen + "\nNo one yet."
-		}
-		while ((place < 10) && (place < players.length)) {
-			topTen = topTen + "\n**" + getOrdinal(place + 1) + " Place**: <@" + players[place] + "> **Points**: " + scores[place] + " **Best streak**: " + streaks[place] + " **Best time**: " + (bestTimes[place] / 1000).toFixed(3) + " sec **Avg. time**: " + (times[place] / scores[place] / 1000).toFixed(3) + " sec";
-			place++;
-		}
-		mybot.sendMessage(message.author, topTen);
+		message.author.send(topTen);
+		deleteAfter = true;
 	}
 
 	// if anyone says "!help" in the chat or DM it, they get a DM with valid commands
 	else if (message.content === "!help") {
-		mybot.deleteMessage(message);
-		if (triviaChannel == null || anyoneStop || privileged) {
-			mybot.sendMessage(message.author, "Commands:\n- **!start**: starts the round of trivia\n- **!stop**: ends the round of trivia\n- **!hint**: sends the question's hint now\n- **!skip**: skips the current question\n- **!list** *list*: changes trivia list to the specified list\n- **!pause:**: pauses the round of trivia\n- **!continue**: continues the round of trivia\n- **!questions** *number*: changes number of questions to the specified number\n- **!anyone start**: toggles ability to use !start and !list\n- **!anyone stop**: toggles ability to use !start, !stop, !hint, !skip, !list, !pause, !continue, and !questions\n- **!anyone answer**: toggles ability for server staff to answer\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
+		if (triviaChannel == null || privileged) {
+			message.author.send(localize("d_helpA"));
+		} else if (settings.anyoneStop) {
+			message.author.send(localize("d_helpB"));
+		} else if (settings.anyoneStart) {
+			message.author.send(localize("d_helpC"));
+		} else {
+			message.author.send(localize("d_helpD"));
 		}
-		else if (anyoneStart) {
-			mybot.sendMessage(message.author, "Commands:\n- **!start**: starts the round of trivia\n- **!list** *list*: changes trivia list to the specified list\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
-		}
-		else {
-			mybot.sendMessage(message.author, "Commands:\n- **!info**: sends a DM to you with your score and place\n- **!top**: sends a DM to you with the top ten and their scores\n- **!help**: sends a DM to you with information on commands you can use");
-		}
+		deleteAfter = true;
 	}
-
+	
+	// if a privileged user says "!exit" in the chat or DM it, the bot will be terminated
+	else if (privileged && message.content === "!exit") {
+		deleteMessage(message);
+		exitHandler();
+	}
+	
+	// if a privileged user says "!echo" in the chat or DM it, the bot will repeat it
+	else if (privileged && message.content.split(" ")[0] === "!echo") {
+		if (triviaChannel != null) {
+			triviaChannel.send(message.content.substring(6));
+		} else {
+			message.channel.send(message.content.substring(6));
+		}
+		console.log(message.content.substring(6));
+		deleteAfter = true;
+	}
+	
+	// if a user says "!when" in the chat or DM it, the bot will DM the next scheduled trivia
+	else if (message.content === "!when") {
+		if (when > 0) {
+			message.author.send("*" + localize("d_schedule", "${time}", new Date(when).toUTCString()) + "*");
+		} else if (settings.schedule.length > 0) {
+			message.author.send("*" + localize("d_schedule", "${time}", new Date(settings.schedule[0]).toUTCString()) + "*");
+		} else {
+			message.author.send("*" + localize("d_noSchedule") + "*");
+		}
+		deleteAfter = true;
+	}
+	
+	// if a privileged user says "!results" in the chat or DM it, the bot will DM the last results
+	else if (privileged && message.content === "!results") {
+		if (resultsFilename === "") {
+			fs.readdir(__dirname, "utf8", function(err, files){
+				if (err || files.length === 0) {
+					message.author.send("*" + localize("d_noResults") + "*");
+				} else {
+					files.sort();
+					files.forEach(function (item, index, array) {
+						if (item.substring(0, 7) === "results") {
+							resultsFilename = item;
+						}	
+					});
+					if (resultsFilename === "") {
+						message.author.send("*" + localize("d_noResults") + "*");
+					} else {
+						message.author.send("", new Discord.MessageAttachment(resultsFilename)).catch(err => {
+							console.log(localize("c_attachmentFailure", "${filename}", resultsFilename));
+						});
+					}
+				}
+			});
+		} else {
+			message.author.send("", new Discord.MessageAttachment(resultsFilename)).catch(err => {
+				console.log(localize("c_attachmentFailure", "${filename}", resultsFilename));
+			});
+		}
+		deleteAfter = true;
+	}
+	
 	// only executes if in chat channel trivia or test
-	else if (message.channel.name === "trivia" || message.channel.name === "test") {
-		// only if Rapidash Trivia or people who can manage server types, or if anyoneStart is true
-		if (anyoneStart || anyoneStop || privileged) {
+	else if (settings.allowedChannels.includes(message.channel.name) || settings.triviaChannel === message.channel.id) {
+		// only if Rapidash Trivia or people who can manage server types, or if settings.anyoneStart is true
+		if (settings.anyoneStart || settings.anyoneStop || privileged) {
 			if (!trivia && !paused && message.content === "!start"){ // starts the trivia
-				triviaChannel = message.channel;
-				mybot.deleteMessage(message);
-				startTrivia(message);
+				if (!settings.triviaChannel || settings.triviaChannel == message.channel.id) {
+					triviaChannel = message.channel;
+				}
+		        deleteAfter = true;
+				if (settings.autoDownload) {
+					downloadQuestions(randomizeQuestions);
+				} else {
+					randomizeQuestions(startTrivia)
+				}
 			} else if (!trivia && !paused && message.content.split(" ")[0] === "!list"){ // changes trivia list
-				mybot.deleteMessage(message);
-				filepath = "./" + message.content.substr(6).trim();
+				deleteAfter = true;
+				var filepath = message.content.substr(6).trim();
 				if (filepath.slice(-4).toLowerCase() !== ".txt") {
 					filepath = filepath + ".txt"
 				}
-				console.log("Trivia list changed to " + filepath);
+				try {
+					if (fs.readFileSync(filepath, "utf8").replace(/^\uFEFF/, '').substring(0,28) === "<!-- DISCORD TRIVIA FILE -->") {
+					settings.filepath = filepath;
+					console.log(localize("c_list"));
+					} else {
+						console.log(localize("c_fileReadError"));
+					}
+				}
+				catch(err) {
+					console.log(localize("c_fileReadError"));
+				}
 			}
 		}
 
-		// only if Rapidash Trivia or people who can manage server types, or if anyoneStop is true
-		if (anyoneStop || privileged) {
+		// only if Rapidash Trivia or people who can manage server types, or if settings.anyoneStop is true
+		if (settings.anyoneStop || privileged) {
 			if (trivia && message.content === "!stop"){ // stops the trivia
-				mybot.deleteMessage(message);
-				endTrivia(message, false);
+				deleteAfter = true;
+				endTrivia(false);
 			} else if (trivia && message.content === "!pause"){ // pauses the trivia
-				mybot.deleteMessage(message);
+				deleteAfter = true;
 				trivia = false;
 				paused = true;
 				clearTimeout(hintTimeout);
 				clearTimeout(skipTimeout);
 				clearTimeout(questionTimeout);
+				clearTimeout(typeTimeout);
 				if (!answered) {
 					questionNum--;
 				}
 				answered = true;
-				mybot.sendMessage(message, "*Paused the trivia*");
-				console.log("Paused the trivia");
+				triviaChannel.stopTyping();
+				message.channel.send(`*${localize("d_pause")}*`);
+				console.log(localize("d_pause"));
 			} else if (!trivia && paused && message.content === "!continue"){ // continues the trivia
-				mybot.deleteMessage(message);
+				deleteAfter = true;
 				trivia = true;
 				paused = false;
-				questionTimeout = setTimeout(askQuestion, 1000, triviaChannel);
-				mybot.sendMessage(message, "*Continuing the trivia*");
-				console.log("Continuing the trivia");
+				triviaChannel.startTyping();
+				questionTimeout = setTimeout(askQuestion, 1000);
+				message.channel.send(`*${localize("d_continue")}*`);
+				console.log(localize("d_continue"));
 			} else if (!answered && message.content === "!hint"){ // gives the hint now
-				mybot.deleteMessage(message);
+				deleteAfter = true;
 				clearTimeout(hintTimeout);
 				hint(message);
 			} else if (!answered && message.content === "!skip"){ // skips the question
-				mybot.deleteMessage(message);
+				deleteAfter = true;
 				clearTimeout(hintTimeout);
 				clearTimeout(skipTimeout);
 				skipQuestion(message);
 			} else if (message.content === "!anyone start"){ // anyone can start the trivia
-				mybot.deleteMessage(message);
-				anyoneStart = !anyoneStart;
-				if (anyoneStart) {
-					anyoneStop = false;
-					mybot.sendMessage(message, "*Anyone can start the trivia*");
-					console.log("Anyone can start the trivia");
+				deleteAfter = true;
+				settings.anyoneStart = !settings.anyoneStart;
+				if (settings.anyoneStart) {
+					settings.anyoneStop = false;
+					message.channel.send(`*${localize("d_anyoneStartOn")}*`);
+					console.log(localize("d_anyoneStartOn"));
 				} else {
-					anyoneStop = false;
-					mybot.sendMessage(message, "*Only server staff can start or stop the trivia*");
-					console.log("Only server staff can start or stop the trivia");
+					settings.anyoneStop = false;
+					message.channel.send(`*${localize("d_anyoneStartOff")}*`);
+					console.log(localize("d_anyoneStartOff"));
 				}
 			} else if (message.content === "!anyone stop"){ // anyone can stop the trivia
-				mybot.deleteMessage(message);
-				anyoneStop = !anyoneStop;
-				anyoneStart = anyoneStop;
-				if (anyoneStop) {
-					mybot.sendMessage(message, "*Anyone can start or stop the trivia*");
-					console.log("Anyone can start or stop the trivia");
+				deleteAfter = true;
+				settings.anyoneStop = !settings.anyoneStop;
+				settings.anyoneStart = settings.anyoneStop;
+				if (settings.anyoneStop) {
+					message.channel.send(`*${localize("d_anyoneStopOn")}*`);
+					console.log(localize("d_anyoneStopOn"));
 				} else {
-					mybot.sendMessage(message, "*Only server staff can start or stop the trivia*");
-					console.log("Only server staff can start or stop the trivia");
+					message.channel.send(`*${localize("d_anyoneStopOff")}*`);
+					console.log(localize("d_anyoneStopOff"));
 				}
-			} else if (message.content === "!anyone answer"){ // anyone can start the trivia
-				mybot.deleteMessage(message);
-				anyoneAnswer = !anyoneAnswer;
-				if (anyoneAnswer) {
-					mybot.sendMessage(message, "*Anyone can answer the trivia*");
-					console.log("Anyone can answer the trivia");
+			} else if (message.content === "!anyone answer"){ // staff can answer the trivia
+				deleteAfter = true;
+				settings.anyoneAnswer = !settings.anyoneAnswer;
+				if (settings.anyoneAnswer) {
+					message.channel.send(`*${localize("d_anyoneAnswerOn")}*`);
+					console.log(localize("d_anyoneAnswerOn"));
 				} else {
-					mybot.sendMessage(message, "*Server staff cannot answer the trivia*");
-					console.log("Server staff cannot answer the trivia");
+					message.channel.send(`*${localize("d_anyoneAnswerOff")}*`);
+					console.log(localize("d_anyoneAnswerOff"));
 				}
 			} else if (!trivia && !paused && message.content.split(" ")[0] === "!questions"){ // changes number of questions
-				mybot.deleteMessage(message);
-				totalQuestions = Math.max(1, parseInt(message.content.substr(11).trim(), 10));
-				if (isNaN(totalQuestions)) {
-					totalQuestions = maxQuestionNum;
+				deleteAfter = true;
+				var newQuestions = Math.max(1, parseInt(message.content.substr(11).trim(), 10));
+				if (isNaN(newQuestions)) {
+					newQuestions = settings.maxQuestionNum;
 				}
-				maxQuestionNum = totalQuestions;
-				console.log("Trivia set to ask " + totalQuestions + " questions");
-			} else if (!answered && !anyoneAnswer && privileged && parseAnswer(message.content, answerArray)) {
-				mybot.deleteMessage(message);
+				settings.maxQuestionNum = newQuestions;
+				console.log(localize("c_questions"));
+			} else if (!trivia && !paused && message.content === "!download"){
+				deleteAfter = true;
+				downloadQuestions();
+			} else if (!trivia && !paused && message.content === "!settings"){
+				deleteAfter = true;
+				try {
+					settings = JSON.parse(`{${fs.readFileSync("settings.txt", "utf8").replace(/^\uFEFF/, '')}}`);
+					console.log(localize("c_settingsLoaded"));
+					try {
+						local = JSON.parse(`{${fs.readFileSync("local_" + settings.lang + ".txt", "utf8").replace(/^\uFEFF/, '')}}`);
+						console.log(localize("c_langLoaded"));
+					} catch(err) {
+						console.log(localize("c_langFailed"));
+					}
+					if (settings.triviaChannel) {
+						bot.channels.fetch(settings.triviaChannel).then((channel) => {
+							triviaChannel = channel;
+						});
+					}
+					if (settings.musicChannel) {
+						bot.channels.fetch(settings.musicChannel).then((channel) => {
+							musicChannel = channel;
+						});
+					}
+				} catch(err) {
+					console.log(localize("c_settingsFailed"));
+				}
+			} else if (!trivia && !paused && message.content.split(" ")[0] === "!settings"){
+				deleteAfter = true;
+				resultsFilename = message.content.substr(10).trim();
+				if (resultsFilename.slice(-4).toLowerCase() !== ".txt") {
+					resultsFilename = resultsFilename + ".txt"
+				}
+				try {
+					var data = fs.readFileSync(resultsFilename, "utf8");
+					settings = JSON.parse(`{${data.replace(/^\uFEFF/, '')}}`);
+					fs.writeFileSync("settings.txt", data);
+					console.log(localize("c_settingsLoaded"));
+					try {
+						local = JSON.parse(`{${fs.readFileSync("local_" + settings.lang + ".txt", "utf8").replace(/^\uFEFF/, '')}}`);
+						console.log(localize("c_langLoaded"));
+					} catch(err) {
+						console.log(localize("c_langFailed"));
+					}
+					if (settings.triviaChannel) {
+						bot.channels.fetch(settings.triviaChannel).then((channel) => {
+							triviaChannel = channel;
+						});
+					}
+					if (settings.musicChannel) {
+						bot.channels.fetch(settings.musicChannel).then((channel) => {
+							musicChannel = channel;
+						});
+					}
+				} catch(err) {
+					console.log(localize("c_fileReadError"));
+				}
+				
+			} else if (message.content === "!reload") {
+				deleteAfter = true;
+				reload = !reload;
+				if (reload) {
+					console.log(localize("c_reloadOff"));
+				} else {
+					console.log(localize("c_reloadOn"));
+				}
+			} else if (message.content.split(" ")[0] === "!disallow") {
+				deleteAfter = true;
+				triviaChannel.updateOverwrite(message.mentions.users.first(), {
+					SEND_MESSAGES: false
+				});
+			} else if (message.content.split(" ")[0] === "!allow") {
+				deleteAfter = true;
+				triviaChannel.updateOverwrite(message.mentions.users.first(), {
+					SEND_MESSAGES: null
+				});
+			} else if (!trivia && message.content.split(" ")[0] === "!timer") {
+				if (!settings.triviaChannel || settings.triviaChannel == message.channel.id) {
+					triviaChannel = message.channel;
+				}
+				deleteAfter = true;
+				var time = Math.max(1, message.content.substr(7).trim()) * 1000;
+				if (!isNaN(time)) {
+					settings.schedule.push(Date.now() + time);
+					checkSchedule();
+					console.log(localize("d_timer", "${time}", time / 1000));
+					triviaChannel.send("*" + localize("d_timer", "${time}", time / 1000) + "*");
+				}
+			} else if (!trivia && message.content.split(" ")[0] === "!schedule") {
+				if (!settings.triviaChannel || settings.triviaChannel == message.channel.id) {
+					triviaChannel = message.channel;
+				}
+				deleteAfter = true;
+				var time = Math.max(Date.now() + 1000, message.content.substr(10).trim() * 1000);
+				if (!isNaN(time)) {
+					settings.schedule.push(time);
+					checkSchedule();
+					console.log(localize("d_schedule", "${time}", new Date(time).toUTCString()));
+					triviaChannel.send("*" + localize("d_schedule", "${time}", new Date(time).toUTCString()) + "*");
+				}
+			} else if (message.content === "!emoji") {
+				deleteAfter = true;
+				var allEmoji = "Emoji: " + fs.readFileSync("local_" + settings.lang + ".txt", "utf8").replace(/^\uFEFF/, '').match(/<:.*?:\d*?>/g).join();
+				console.log(allEmoji);
+				triviaChannel.send(allEmoji);
+			} else if (!answered && !settings.anyoneAnswer && privileged && parseAnswer(message.content, answerArray)) {
+				deleteAfter = true;
 			}
 		}
 
 		// if answer is correct
-		if (!answered && (anyoneAnswer || !privileged) && parseAnswer(message.content, answerArray)) {
-			var timeTaken = message.timestamp - questionTimestamp;
-			if (timeTaken < 1500 || timeTaken > skipTime || 12000 * message.content.length / timeTaken > 120) { //if they answer in less than 1500 ms, before the question is sent to the server, or WPM is greater than 120
-				console.log("*@" + message.author.username + " " + message.author.mention() + " has been banned for suspicious activity* (answered in " + timeTaken + " ms, WPM was " + (12000 * message.content.length / timeTaken).toFixed() + ")");
-				mybot.banMember(message.author, message.channel.server, 0);
-				mybot.sendMessage(message.channel, "*" + message.author.mention() + " has been banned for suspicious activity*");
-				mybot.sendMessage(message.author, "*You have been banned for suspicious activity*");
-				mybot.deleteMessage(message);
+		if (!answered && (settings.anyoneAnswer || !privileged) && parseAnswer(message.content, answerArray)) {
+			var timeTaken = message.createdTimestamp - questionTimestamp;
+			var winnerIndex = -1;
+			for (var i = 0; i < players.length; i++) {
+				if (players[i].id === message.author.id) {
+					winnerIndex = i;
+					break;
+				}
+			}
+			if (winnerIndex !== -1 && (timeTaken < 1000 || timeTaken > (settings.skipTime + 163500) || 12000 * message.content.length / timeTaken > 120)) { //if they answer in less than 1500 ms, before the question is sent to the server, or WPM is greater than 120
+				players[winnerIndex].strikes++;
+				if (players[winnerIndex].strikes === 3) {
+					console.log(localize("c_ban", "${message.author.username}", message.author.username, "${message.author.toString()}", message.author.toString(), "timeTaken", timeTaken, "message.content.length", message.content.length));
+					message.channel.guild.ban(message.author, 0);
+					message.channel.send(localize("d_ban", "${message.author.toString()}", message.author.toString()));
+					message.author.send(localize("d_banDm"));
+				} else {
+					console.log(localize("c_strike", "${message.author.username}", message.author.username, "${message.author.toString()}", message.author.toString(), "timeTaken", timeTaken, "message.content.length", message.content.length));
+				}
+				deleteAfter = true;
 			} else {
 				clearTimeout(hintTimeout);
 				clearTimeout(skipTimeout);
 				var oldRank;
-				if (players.indexOf(message.author.id) === -1) { // if player hasn't won before
-					players.push(message.author.id);
-					names.push(message.author.username);
-					scores.push(1);
-					streaks.push(1);
-					times.push(timeTaken);
-					bestTimes.push(timeTaken);
+				if (winnerIndex === -1) { // if player hasn't won before
+					players.push({
+						id: message.author.id,
+						name: message.author.username,
+						score: 1,
+						streak: 1,
+						time: timeTaken,
+						bestTime: timeTaken,
+						strikes: 0});
 					oldRank = players.length + 1; // rank + 1 to force message
 					roundWinnerScore = 1;
-					roundWinnerStreak = 1;
+					winnerIndex = players.length - 1;
 				} else { // if player has won before
-					var winnerIndex = players.indexOf(message.author.id);
+					players[winnerIndex].name = message.author.username;
+					players[winnerIndex].score++;
+					players[winnerIndex].time += timeTaken;
 					oldRank = winnerIndex + 1;
-					scores[winnerIndex]++;
-					roundWinnerScore = scores[winnerIndex];
-					times[winnerIndex] += timeTaken;
+					roundWinnerScore = players[winnerIndex].score;
 
-					if (lastRoundWinner === message.author.id) { // if winner of this and last round are the same
-						roundWinnerStreak++;
-						if (roundWinnerStreak > streaks[winnerIndex]) { // if this is a longer streak than old best streak
-							streaks[winnerIndex] = roundWinnerStreak;
-						}
-						if (roundWinnerStreak > 5) {
-							mybot.sendMessage(message, "*" + message.author.mention() + " stretches their streak to " + roundWinnerStreak + "!*");
-						}
-					} else {
-						if (roundWinnerStreak > 5) {
-							mybot.sendMessage(message, "*<@" + lastBestStreakPlayer + ">'s streak ended at " + roundWinnerStreak + " by " + message.author.mention() + "*");
-						}
-						roundWinnerStreak = 1;
+					if (timeTaken < players[winnerIndex].bestTime) { // if this is a better time than old best time
+						players[winnerIndex].bestTime = timeTaken;
 					}
-
-					if (timeTaken < bestTimes[winnerIndex]) { // if this is a better time than old best time
-						bestTimes[winnerIndex] = timeTaken;
-					}
-					players = sortByArray(players,scores);
-					names = sortByArray(names,scores);
-					streaks = sortByArray(streaks,scores);
-					times = sortByArray(times,scores);
-					bestTimes = sortByArray(bestTimes,scores);
-					scores.sort(function(a, b) {
-					return b - a;
+					
+					players = players.map(function(a, b) {
+						return {player: a, pos: b};
+					}).sort(function(a, b) {
+						if (b.player.score - a.player.score === 0) {
+							return a.pos - b.pos;
+						} else {
+							return b.player.score - a.player.score;
+						}
+					}).map(function(a) {
+						return a.player;
 					});
 				}
-
-				var rank = players.indexOf(message.author.id) + 1;
-
-				// say correct answer and who entered it
-				mybot.sendMessage(message, "**Winner**: " + message.author.mention() + " **Answer**: " + answerText + " **Points**: " + roundWinnerScore + " **Place**: " + getOrdinal(rank) + " **Streak**: " + roundWinnerStreak + " **Time**: " + (timeTaken / 1000).toFixed(3) + " sec");
-				console.log("Winner: " + message.author.username + " " + message.author.mention() + " Answer: " + message.content + " Points: " + roundWinnerScore + " Place: " + getOrdinal(rank) + " Streak: " + roundWinnerStreak + " Time: " + (timeTaken / 1000).toFixed(3) + " sec");
-
-				// sends message if they moved up in rank
-				if (rank < oldRank) {
-					mybot.sendMessage(message, "*" + message.author.mention() + " has moved up in rank* (" + getOrdinal(rank) + ")");
+				
+				// calculate player rank
+				var rank;
+				for (var i = 0; i < players.length; i++) {
+					if (players[i].id === message.author.id) {
+						rank = i + 1;
+						break;
+					}
 				}
-
+				
+				// keep track of current streak
+				if (lastRoundWinner === message.author.id) {
+					roundWinnerStreak++;
+					if (roundWinnerStreak > players[winnerIndex].streak) {
+						players[winnerIndex].streak = roundWinnerStreak;
+					}
+					if (roundWinnerStreak > 5) {
+						message.channel.send(localize("d_streakContinue", "${message.author.toString()}", message.author.toString()));
+					}
+				} else {
+					if (roundWinnerStreak > 5) {
+						message.channel.send(localize("d_streakBroken", "${message.author.toString()}", message.author.toString()));
+					}
+					roundWinnerStreak = 1;
+				}
+				
+				// sends message if they moved up in rank
+				if (rank < oldRank && oldRank === players.length + 1) {
+					message.channel.send(localize("d_rankUp", "${getOrdinal(rank)}", getOrdinal(rank), "${message.author.toString()}", message.author.toString(), "${rank}", rank, "${getOrdinal(oldRank)}", "—"));
+				} else if (rank < oldRank) {
+					message.channel.send(localize("d_rankUp", "${getOrdinal(rank)}", getOrdinal(rank), "${message.author.toString()}", message.author.toString(), "${rank}", rank, "${getOrdinal(oldRank)}", getOrdinal(oldRank)));
+				}
+				
 				// keep track of time record for current round
 				if (lastBestTimePlayer === "null") { // if there is no best time yet
 					lastBestTimePlayer = message.author.id;
 					lastBestTime = timeTaken;
 				} else if (timeTaken < lastBestTime) { // if the player beat the last best time
-					mybot.sendMessage(message, "*" + message.author.mention() + " broke the current round time record with " + (timeTaken / 1000).toFixed(3) + " sec! Previous record holder was <@" + lastBestTimePlayer + "> with " + (lastBestTime / 1000).toFixed(3) + " sec!*");
+					message.channel.send(localize("d_timeNewRecord", "timeTaken", timeTaken, "${message.author.toString()}", message.author.toString()));
 					lastBestTimePlayer = message.author.id;
 					lastBestTime = timeTaken;
 				}
@@ -605,93 +1134,418 @@ mybot.on("message", function(message){
 					lastBestStreak = roundWinnerStreak;
 				} else if (roundWinnerStreak > lastBestStreak) { // if the player beat the last best streak
 					if (lastBestStreakPlayer !== message.author.id) {
-						mybot.sendMessage(message, "*" + message.author.mention() + " broke the current round streak record with " + roundWinnerStreak + "! Previous record holder was <@" + lastBestStreakPlayer + "> with " + lastBestStreak + "!*");
+						message.channel.send(localize("d_streakNewRecord", "${message.author.toString()}", message.author.toString()));
 					}
 					lastBestStreakPlayer = message.author.id;
 					lastBestStreak = roundWinnerStreak;
 				}
 
 				// sends message based on streak
-				switch (roundWinnerStreak) {
-					case 3:
-						mybot.sendMessage(message, "*" + mybot.user.mention() + " hands " + message.author.mention() + " a jelly-filled donut for getting the last 3 questions!*");
+				for (var i = 0; i < local.streakMsg.length; i++) {
+					if (local.streakMsg[i][0] === roundWinnerStreak) {
+						message.channel.send(local.streakMsg[i][1].replace(new RegExp("\\$\\{bot\\.user\\.toString\\(\\)\\}", "g"), bot.user.toString()).replace(new RegExp("\\$\\{message\\.author\\.toString\\(\\)\\}", "g"), message.author.toString()));
 						break;
-					case 5:
-						mybot.sendMessage(message, "*" + mybot.user.mention() + " hands " + message.author.mention() + " a diploma for getting the last 5 questions!*");
-						break;
-					case 10:
-						mybot.sendMessage(message, "*" + mybot.user.mention() + " watches " + message.author.mention() + " speed away from their competitors, kicking their asses! 10 questions!*");
-						break;
-					case 15:
-						mybot.sendMessage(message, "*" + mybot.user.mention() + " bows before " + message.author.mention() + " who is a trivia Legendary Pokémon...*");
-						break;
-					case 25:
-						mybot.sendMessage(message, "*" + mybot.user.mention() + " bows before " + message.author.mention() + " who knows more about Pokémon than Arceus...*");
-						break;
+					}
 				}
 
 				// sends message based on points
-				switch (roundWinnerScore) {
-					case 50:
-						mybot.sendMessage(message, "*" + mybot.user.mention() + " rewards " + message.author.mention() + " with a Ratatta in the top percentage of all Rattata!*");
+				for (var i = 0; i < local.scoreMsg.length; i++) {
+					if (local.scoreMsg[i][0] === roundWinnerScore) {
+						message.channel.send(local.scoreMsg[i][1].replace(new RegExp("\\$\\{bot\\.user\\.toString\\(\\)\\}", "g"), bot.user.toString()).replace(new RegExp("\\$\\{message\\.author\\.toString\\(\\)\\}", "g"), message.author.toString()));
 						break;
-					case 100:
-						mybot.sendMessage(message, "*" + mybot.user.mention() + " rewards " + message.author.mention() + " with some shorts that are comfy and easy to wear!*");
-						break;
-					case 150:
-						mybot.sendMessage(message, "*" + mybot.user.mention() + " rewards " + message.author.mention() + " with a Helix Fossil!*");
-						break;
+					}
 				}
 
+				// say correct answer and who entered it
+				var winMessage = `**${localize("t_roundWinner")}**: ${message.author.toString()} **${localize("t_answer")}**: ${answerText} **${localize("t_points")}**: ${roundWinnerScore} **${localize("t_place")}**: ${getOrdinal(rank)} **${localize("t_streak")}**: ${roundWinnerStreak} **${localize("t_time")}**: ${(timeTaken / 1000).toFixed(3)} ${localize("t_sec")}`;
+				if (answerImage !== "") { // answer attachments
+					fs.readFile(answerImage, (err, data) => {
+						if (err) {
+							console.log(localize("c_attachmentFailure", "${filename}", answerImage));
+						} else {
+							message.channel.send(winMessage, new Discord.MessageAttachment(data, path.basename(answerImage))).catch(err => {
+								console.log(localize("c_attachmentFailure", "${filename}", answerImage));
+								message.channel.send(winMessage);
+							});
+						}
+					});
+				} else {
+					message.channel.send(winMessage);
+				}
+				console.log(`${localize("t_roundWinner")}: ${message.author.username} ${message.author.toString()} ${localize("t_answer")}: ${message.content} ${localize("t_points")}: ${roundWinnerScore} ${localize("t_place")}: ${getOrdinal(rank)} ${localize("t_streak")}: ${roundWinnerStreak} ${localize("t_time")}: ${(timeTaken / 1000).toFixed(3)} ${localize("t_sec")}`);
+				
+				// stop music
+				if (answerMusic !== "") {
+					try {
+						musicChannel.send("~clear").then(message => {
+							musicChannel.send("~skip").then(message => {
+								musicChannel.send("~skip");
+						})});
+					}
+					catch (err) {
+						console.log(localize("c_musicFailure", "${answerMusic}", answerMusic));
+					}
+				}
+			
+				// update top ten information
+				var place = 0;
+				topTen = localize("t_topTen") + ":";
+				if (players.length === 0) {
+					topTen = localize("d_topTenDefault");
+				}
+				while ((place < 10) && (place < players.length)) {
+					topTen = `${topTen}\n**${getOrdinal(place + 1)} ${localize("t_place")}**: ${players[place].name} <@${players[place].id}> **${localize("t_points")}**: ${players[place].score} **${localize("t_bestStreak")}**: ${players[place].streak} **${localize("t_bestTime")}**: ${(players[place].bestTime / 1000).toFixed(3)} ${localize("t_sec")} **${localize("t_avgTime")}**: ${(players[place].time / players[place].score / 1000).toFixed(3)} ${localize("t_sec")}`;
+					place++;
+				}
+				
 				lastRoundWinner = message.author.id;
 				answered = true;
-				questionTimeout = setTimeout(askQuestion, betweenTime, message);
+				questionTimeout = setTimeout(askQuestion, settings.betweenTime);
+				typeTimeout = setTimeout(function(){
+					if (trivia) {
+						triviaChannel.startTyping();
+					}
+				}, Math.max(settings.betweenTime - 5000, 0))
 			}
+		}
+	}
+
+    if (deleteAfter === true) {
+        deleteMessage(message);
+    }
+});
+
+rl.on("line", (line) => {
+	if (line === "!info" || line == "!results") {
+		console.log(localize("c_commandInvalid"));
+	}
+
+	else if (line === "!top" || line === "!records") {
+		console.log(topTen);
+	}
+
+	else if (line === "!help") {
+		console.log(localize("d_helpA"));
+	}
+
+	else if (line === "!exit") {
+		exitHandler();
+	}
+
+	else if (line.split(" ")[0] === "!echo") {
+		if (triviaChannel != null) {
+			triviaChannel.send(line.substring(6));
+		}
+	}
+
+	else if (line === "!when") {
+		if (when > 0) {
+			console.log(localize("d_schedule", "${time}", new Date(when).toUTCString()));
+		} else if (settings.schedule.length > 0) {
+			console.log(localize("d_schedule", "${time}", new Date(settings.schedule[0]).toUTCString()));
+		} else {
+			console.log(localize("d_noSchedule"));
+		}
+	}
+	
+	else if (!trivia && !paused && line === "!start") {
+		if (triviaChannel != null) {
+			if (settings.autoDownload) {
+				downloadQuestions(randomizeQuestions);
+			} else {
+				randomizeQuestions(startTrivia);
+			}
+		} else {
+			console.log(localize("c_channelNotFound"));
+		}
+	}
+
+	else if (!trivia && !paused && line.split(" ")[0] === "!list") {
+		var filepath = line.substr(6).trim();
+		if (filepath.slice(-4).toLowerCase() !== ".txt") {
+			filepath = filepath + ".txt"
+		}
+		try {
+			if (fs.readFileSync(filepath, "utf8").replace(/^\uFEFF/, '').substring(0,28) === "<!-- DISCORD TRIVIA FILE -->") {
+			settings.filepath = filepath;
+			console.log(localize("c_list"));
+			} else {
+				console.log(localize("c_fileReadError"));
+			}
+		}
+		catch(err) {
+			console.log(localize("c_fileReadError"));
+		}
+	}
+	
+	else if (trivia && line === "!stop") {
+		endTrivia(false);
+	}
+
+	else if (trivia && line === "!pause") {
+		trivia = false;
+		paused = true;
+		clearTimeout(hintTimeout);
+		clearTimeout(skipTimeout);
+		clearTimeout(questionTimeout);
+		clearTimeout(typeTimeout);
+		if (!answered) {
+			questionNum--;
+		}
+		answered = true;
+		triviaChannel.stopTyping();
+		triviaChannel.send(`*${localize("d_pause")}*`);
+		console.log(localize("d_pause"));
+	}
+
+	else if (!trivia && paused && line === "!continue") { // continues the trivia
+		trivia = true;
+		paused = false;
+		questionTimeout = setTimeout(askQuestion, 1000);
+		triviaChannel.send(`*${localize("d_continue")}*`);
+		console.log(localize("d_continue"));
+	}
+
+	else if (!answered && line === "!hint") { // gives the hint now
+		clearTimeout(hintTimeout);
+		hint();
+	}
+
+	else if (!answered && line === "!skip") { // skips the question
+		clearTimeout(hintTimeout);
+		clearTimeout(skipTimeout);
+		skipQuestion();
+	}
+
+	else if (line === "!anyone start") { // anyone can start the trivia
+		settings.anyoneStart = !settings.anyoneStart;
+		if (settings.anyoneStart) {
+			settings.anyoneStop = false;
+			triviaChannel.send(`*${localize("d_anyoneStartOn")}*`);
+			console.log(localize("d_anyoneStartOn"));
+		} else {
+			settings.anyoneStop = false;
+			triviaChannel.send(`*${localize("d_anyoneStartOff")}*`);
+			console.log(localize("d_anyoneStartOff"));
+		}
+	}
+
+	else if (line === "!anyone stop") { // anyone can stop the trivia
+		settings.anyoneStop = !settings.anyoneStop;
+		settings.anyoneStart = settings.anyoneStop;
+		if (settings.anyoneStop) {
+			triviaChannel.send(`*${localize("d_anyoneStopOn")}*`);
+			console.log(localize("d_anyoneStopOn"));
+		} else {
+			triviaChannel.send(`*${localize("d_anyoneStopOff")}*`);
+			console.log(localize("d_anyoneStopOff"));
+		}
+	}
+
+	else if (line === "!anyone answer") { // anyone can start the trivia
+		settings.anyoneAnswer = !settings.anyoneAnswer;
+		if (settings.anyoneAnswer) {
+			triviaChannel.send(`*${localize("d_anyoneAnswerOn")}*`);
+			console.log(localize("d_anyoneAnswerOn"));
+		} else {
+			triviaChannel.send(`*${localize("d_anyoneAnswerOff")}*`);
+			console.log(localize("d_anyoneAnswerOff"));
+		}
+	}
+
+	else if (!trivia && !paused && line.split(" ")[0] === "!questions") { // changes number of questions
+		var newQuestions = Math.max(1, parseInt(line.substr(11).trim(), 10));
+		if (isNaN(newQuestions)) {
+			newQuestions = settings.maxQuestionNum;
+		}
+		settings.maxQuestionNum = newQuestions;
+		console.log(localize("c_questions"));
+	}
+
+	else if (!trivia && !paused && line === "!download") {
+		downloadQuestions();
+	}
+	
+	else if (!trivia && !paused && line === "!settings"){
+		try {
+			settings = JSON.parse(`{${fs.readFileSync("settings.txt", "utf8").replace(/^\uFEFF/, '')}}`);
+			console.log(localize("c_settingsLoaded"));
+			try {
+				local = JSON.parse(`{${fs.readFileSync("local_" + settings.lang + ".txt", "utf8").replace(/^\uFEFF/, '')}}`);
+				console.log(localize("c_langLoaded"));
+			} catch(err) {
+				console.log(localize("c_langFailed"));
+			}
+			if (settings.triviaChannel) {
+				bot.channels.fetch(settings.triviaChannel).then((channel) => {
+					triviaChannel = channel;
+				});
+			}
+			if (settings.musicChannel) {
+				bot.channels.fetch(settings.musicChannel).then((channel) => {
+					musicChannel = channel;
+				});
+			}
+		} catch(err) {
+			console.log(localize("c_settingsFailed"));
+		}
+	}
+
+	
+	else if (!trivia && !paused && line.split(" ")[0] === "!settings"){
+		filename = line.substr(10).trim();
+		if (filename.slice(-4).toLowerCase() !== ".txt") {
+			filename = filename + ".txt"
+		}
+		try {
+			var data = fs.readFileSync(filename, "utf8");
+			fs.writeFileSync("settings.txt", data);
+			console.log(localize("c_settingsLoaded"));
+			settings = JSON.parse(`{${data.replace(/^\uFEFF/, '')}}`);
+			try {
+				local = JSON.parse(`{${fs.readFileSync("local_" + settings.lang + ".txt", "utf8").replace(/^\uFEFF/, '')}}`);
+				console.log(localize("c_langLoaded"));
+			} catch(err) {
+				console.log(localize("c_langFailed"));
+			}
+			if (settings.triviaChannel) {
+				bot.channels.fetch(settings.triviaChannel).then((channel) => {
+					triviaChannel = channel;
+				});
+			}
+			if (settings.musicChannel) {
+				bot.channels.fetch(settings.musicChannel).then((channel) => {
+					musicChannel = channel;
+				});
+			}
+		} catch(err) {
+			console.log(localize("c_fileReadError"));
+		}
+	}
+	
+	else if (!trivia && line.split(" ")[0] === "!reload") {
+		reload = !reload;
+		if (reload) {
+			console.log(localize("c_reloadOff"));
+		} else {
+			console.log(localize("c_reloadOn"));
+		}
+	}
+	
+	else if (line.split(" ")[0] === "!disallow") {
+		bot.users.fetch(line.substr(10).trim()).then((user) => {
+			triviaChannel.updateOverwrite(user, {
+				SEND_MESSAGES: false
+			});
+		});
+	}
+	
+	else if (line.split(" ")[0] === "!allow") {
+		bot.users.fetch(line.substr(7).trim()).then((user) => {
+			triviaChannel.updateOverwrite(user, {
+				SEND_MESSAGES: null
+			});
+		});
+		triviaChannel.overwritePermissions([
+			{
+				id: line.substr(7).trim(),
+				deny: [],
+				type: "member"
+			}
+		]);
+	}
+	
+	else if (!trivia && line.split(" ")[0] === "!timer") {
+		if (triviaChannel == null) {
+			console.log(localize("c_channelNotFound"));
+		} else {
+			var time = Math.max(1, line.substr(7).trim()) * 1000;
+			if (!isNaN(time)) {
+				settings.schedule.push(Date.now() + time);
+				checkSchedule();
+				console.log(localize("d_timer", "${time}", time / 1000));
+				triviaChannel.send("*" + localize("d_timer", "${time}", time / 1000) + "*");
+			}
+		}
+	}
+	
+	else if (!trivia && line.split(" ")[0] === "!schedule") {
+		if (triviaChannel == null) {
+			console.log(localize("c_channelNotFound"));
+		} else {
+			var time = Math.max(Date.now() + 1000, message.content.substr(10).trim() * 1000);
+			if (!isNaN(time)) {
+				settings.schedule.push(time);
+				checkSchedule();
+				console.log(localize("d_schedule", "${time}", new Date(time).toUTCString()));
+				triviaChannel.send("*" + localize("d_schedule", "${time}", new Date(time).toUTCString()) + "*");
+			}
+		}
+	}
+	
+	else if (line === "!emoji") {
+		var allEmoji = "Emoji: " + fs.readFileSync("local_" + settings.lang + ".txt", "utf8").replace(/^\uFEFF/, '').match(/<:.*?:\d*?>/g).join();
+		console.log(allEmoji);
+		triviaChannel.send(allEmoji);
+	}
+	
+	else if (line === "!randomize") {
+		randomizeQuestions();
+	}
+
+	else {
+		try {
+			eval(line);
+		} catch(err) {
+			console.log(localize("c_invalid"));
 		}
 	}
 });
 
-questionNum -= 1;
-mybot.login(botUsername, botPassword);
-console.log("The trivia bot has been started.");
+bot.on('ready', () => {
+	if (settings.triviaChannel) {
+		bot.channels.fetch(settings.triviaChannel).then((channel) => {
+			triviaChannel = channel;
+		});
+	}
+	if (settings.musicChannel) {
+		bot.channels.fetch(settings.musicChannel).then((channel) => {
+			musicChannel = channel;
+		});
+	}
+	console.log(localize("c_startBot"));
+	bot.user.setPresence({status: "idle", activity: {type: 0, name: ""}});
+	checkSchedule();
+});
+
+questionNum--;
+bot.login(settings.token).catch(err => {
+	console.log(localize("c_loginError"));
+	process.exit();
+});
 
 // exit handling stuff
 process.stdin.resume();
+process.on('unhandledRejection', r => console.log(r));
+process.on('uncaughtException', e => console.log(e));
 
 function exitHandler() {
-	mybot.sendMessage(triviaChannel, "Attention, @everyone. The trivia bot has been terminated.", {tts: true}, function(error, message){
+	if (!exit) {
+		exit = true;
 		if (trivia) {
-			var outputFilename = "results" + Date.now() + ".html";
-			fs.writeFileSync(outputFilename, "<html><head><title>Discord Trivia Bot Results</title></head>\n<body>\n<h1>Winners of round</h1>\n<p style=\"color: red\">(aborted at " + (new Date()).toUTCString() + ")</p>\n<table border=\"1\">\n<tr><th>Rank</th><th>Name</th><th>User ID</th><th>Score</th><th>Best Streak</th><th>Best Time</th><th>Avg. Time</th></tr>");
-			for (var i = 0; i < players.length; i++) {
-				fs.appendFileSync(outputFilename, "\n<tr><td>" + getOrdinal(i + 1) + "</td><td>" + names[i] + "</td><td>&lt;@" + players[i] + "&gt;</td><td>" + scores[i] + "</td><td>" + streaks[i] + "</td><td>" + (bestTimes[i] / 1000).toFixed(3) + "</td><td>" + ((times[i] / scores[i]) / 1000).toFixed(3) + "</td></tr>");
-			}
-			fs.appendFileSync(outputFilename, "\n</table>\n<p>Discord Trivia Bot created by <a href=\"http://bulbapedia.bulbagarden.net/wiki/User:Abcboy\">abcboy</a></p>\n<h2>Error info:</h2><ul>");
-			fs.appendFileSync(outputFilename, "\n<li>var questionNum = " + questionNum + ";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var maxQuestionNum = " + maxQuestionNum + ";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var lastRoundWinner = \"" + lastRoundWinner + "\";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var roundWinnerScore = " + roundWinnerScore + ";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var roundWinnerStreak = " + roundWinnerStreak + ";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var lastBestTimePlayer = \"" + lastBestTimePlayer + "\";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var lastBestTime = " + lastBestTime + ";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var lastBestStreakPlayer = \"" + lastBestStreakPlayer + "\";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var lastBestStreak = " + lastBestStreak + ";</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var players = [\"" + players.join("\",\"") + "\"];</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var names = [\"" + names.join("\",\"") + "\"];</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var scores = [" + scores.join() + "];</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var streaks = [" + streaks.join() + "];</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var times = [" + times.join() + "];</li>");
-			fs.appendFileSync(outputFilename, "\n<li>var bestTimes = [" + bestTimes.join() + "];</li></ul>");
-			fs.appendFileSync(outputFilename, "\n</body>\n</html>");
+			triviaChannel.send(localize("d_terminate"), {tts: settings.tts});
 		}
-		console.log("The trivia bot has been terminated.");
-		if (error) {
-			console.log(error);
+		console.log(localize("c_terminate"));
+		bot.destroy();
+		if (trivia && players.length > 0) {
+			outputScores(true);
 		}
 		process.exit();
-	});
+	}
 }
 
-process.on('exit', exitHandler.bind(null));
-process.on('SIGINT', exitHandler.bind(null));
-process.on('uncaughtException', exitHandler.bind(null));
+if (!settings.debug) {
+	rl.on('SIGINT', exitHandler.bind(null));
+	process.on('exit', exitHandler.bind(null));
+	process.on('SIGINT', exitHandler.bind(null));
+}
