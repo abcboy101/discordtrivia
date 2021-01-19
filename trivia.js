@@ -1446,13 +1446,6 @@ rl.on("line", (line) => {
 				SEND_MESSAGES: null
 			});
 		});
-		triviaChannel.overwritePermissions([
-			{
-				id: line.substr(7).trim(),
-				deny: [],
-				type: "member"
-			}
-		]);
 	}
 	
 	else if (!trivia && line.split(" ")[0] === "!timer") {
