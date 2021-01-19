@@ -397,7 +397,7 @@ function askQuestion() {
 		
 		var line = getLine(questionNum);
 		questionNum++;
-		var questionText = line.substring(0,line.indexOf("*")).replace(/\[.*\]/,"").replace(/\<.*\>/,"").replace(/_/g,"\\_").trim();
+		var questionText = line.substring(0,line.indexOf("*")).replace(/\[.*\]/,"").replace(/\<.*\>/,"").replace(/_/g,"\\_").replace(/\\n/g,"\n").trim();
 		
 		if (line.indexOf("`") !== -1) { // if there's a note
 			answerArray = line.substring(line.indexOf("*")+1,line.indexOf("`")).replace(/\[.*\]/,"").replace(/\<.*\>/,"").split("*");
