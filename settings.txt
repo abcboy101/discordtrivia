@@ -5,6 +5,7 @@
 "anyoneAnswer": true,
 "autoDownload": false,
 "tiebreaker": true,
+"containsAnswer": false,
 "tts": false,
 "startTime": 60000,
 "hintTime": 35000,

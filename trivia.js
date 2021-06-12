@@ -28,6 +28,7 @@ try {
 		anyoneAnswer: false,
 		autoDownload: false,
 		tiebreaker: false,
+		containsAnswer: false,
 		tts: false,
 		startTime: 60000,
 		hintTime: 30000,
@@ -359,7 +360,12 @@ function parseAnswer(answer, correct) {
 	var cleanAnswer = clean(answer);
 	for (var i = 0; i < correct.length; i++) {
 		// each answer choice is cleaned and compared
-		if ((answer === correct[i]) || (cleanAnswer.length > 0 && ((cleanAnswer === clean(correct[i])) || (cleanTypos(cleanAnswer) === cleanTypos(clean(correct[i])))))) {
+		if (!settings.containsAnswer && ((answer === correct[i]) || (cleanAnswer.length > 0 && ((cleanAnswer === clean(correct[i])) || (cleanTypos(cleanAnswer) === cleanTypos(clean(correct[i]))))))) {
+			// exact match
+			return true;
+		}
+		else if (settings.containsAnswer && ((correct[i].indexOf(answer) !== -1) || (cleanAnswer.length > 0 && ((clean(correct[i]).indexOf(cleanAnswer) !== -1) || (cleanTypos(clean(correct[i])).indexOf(cleanTypos(cleanAnswer))))))) {
+			// contains match
 			return true;
 		}
 	}

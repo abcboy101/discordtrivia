@@ -17,6 +17,7 @@ The settings.txt file contains the current settings for the bot. All channel IDs
 - anyoneAnswer:		(*boolean*) whether privileged users can answer the trivia
 - autoDownload:		(*boolean*) whether the trivia file should be downloaded from the URL specified in "downloadUrl"
 - tiebreaker:		(*boolean*) whether the trivia should continue past "maxQuestionNum" if there is a tie for first place
+- containsAnswer:	(*boolean*) whether messages that only contain the answer should count as correct
 - tts:				(*boolean*) whether the bot should have TTS enabled on announcements
 - startTime:		(*number*) time until the first question is asked after the trivia begins in milliseconds
 - hintTime:			(*number*) time until the hint is given after a question is asked in milliseconds
