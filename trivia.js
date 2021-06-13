@@ -364,7 +364,7 @@ function parseAnswer(answer, correct) {
 			// exact match
 			return true;
 		}
-		else if (settings.containsAnswer && ((correct[i].indexOf(answer) !== -1) || (cleanAnswer.length > 0 && ((clean(correct[i]).indexOf(cleanAnswer) !== -1) || (cleanTypos(clean(correct[i])).indexOf(cleanTypos(cleanAnswer))))))) {
+		else if (settings.containsAnswer && ((answer.indexOf(correct[i]) !== -1) || (cleanAnswer.length > 0 && ((cleanAnswer.indexOf(clean(correct[i])) !== -1) || (cleanTypos(cleanAnswer).indexOf(cleanTypos(clean(correct[i]))) !== -1))))) {
 			// contains match
 			return true;
 		}
